@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Lock, Mail, ShieldAlert, KeyRound, ArrowRight } from 'lucide-react';
+import { Lock, Mail, ShieldAlert, ArrowRight } from 'lucide-react';
 import { authClient, AuthUser } from '../../lib/authClient';
 import { useToast } from '../../components/ui/Toast';
 
 export const LoginScreen: React.FC = () => {
-  const [email, setEmail] = useState('vijaykumarunfounded@gmail.com');
-  const [password, setPassword] = useState('UNFOUNDED@2026');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -54,11 +54,6 @@ export const LoginScreen: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handlePresetDemo = () => {
-    setEmail('vijaykumarunfounded@gmail.com');
-    setPassword('UNFOUNDED@2026');
   };
 
   return (
@@ -142,17 +137,6 @@ export const LoginScreen: React.FC = () => {
               </button>
             </div>
           </form>
-
-          {/* Quick Preset Button */}
-          <div className="mt-6 pt-4 border-t border-[#EBE4D8] text-center">
-            <button
-              onClick={handlePresetDemo}
-              className="text-xs text-[#C69432] hover:underline font-semibold flex items-center justify-center space-x-1.5 mx-auto font-numeric"
-            >
-              <KeyRound className="w-3.5 h-3.5" />
-              <span>Fill Verified Admin Credentials</span>
-            </button>
-          </div>
         </div>
       </div>
     </div>
