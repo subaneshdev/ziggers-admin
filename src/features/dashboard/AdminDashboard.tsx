@@ -241,29 +241,32 @@ export const AdminDashboard: React.FC = () => {
                   {(snapshot?.metricValue?.work_categories || []).map((cat: any, idx: number) => (
                     <div key={idx} className="p-4 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] flex flex-col sm:flex-row sm:items-center justify-between gap-4 font-numeric">
                       <div className="space-y-0.5">
-                        <h4 className="text-sm font-extrabold text-[#2C221E]">{cat.name || 'Others'}</h4>
-                        <p className="text-[11px] font-medium text-[#8C827A]">Avg Pay: {formatCurrency(cat.avgPay || 367)}</p>
+                        <h4 className="text-sm font-extrabold text-[#2C221E]">{cat.name || cat.category || 'General Support'}</h4>
+                        <p className="text-[11px] font-medium text-[#8C827A]">Avg Pay: {formatCurrency(cat.avgPay || 0)}</p>
                       </div>
 
                       <div className="flex-1 max-w-md space-y-1">
                         <div className="flex items-center justify-between text-[11px] font-semibold text-[#2C221E]">
-                          <span>Comp: {cat.completionRate || 100}%</span>
-                          <span>{cat.count || 3} Zigs</span>
+                          <span>Comp: {cat.completionRate || 0}%</span>
+                          <span>{cat.count || 0} Zigs</span>
                         </div>
                         <div className="w-full h-2 rounded-full bg-[#EBE4D8] overflow-hidden">
                           <div
                             className="h-full bg-[#16A34A] rounded-full transition-all duration-500"
-                            style={{ width: `${cat.completionRate || 100}%` }}
+                            style={{ width: `${cat.completionRate || 0}%` }}
                           />
                         </div>
                       </div>
 
                       <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-[#DCFCE7] text-[#16A34A] border border-[#BBF7D0] font-bold text-[11px] self-start sm:self-auto shrink-0">
                         <TrendingUp className="w-3.5 h-3.5" />
-                        <span>{cat.trend || '+1'}</span>
+                        <span>{cat.trend || '+0'}</span>
                       </div>
                     </div>
                   ))}
+                  {(!snapshot?.metricValue?.work_categories || snapshot?.metricValue?.work_categories.length === 0) && (
+                    <p className="text-xs text-[#665C54] py-4 text-center">No work categories posted yet.</p>
+                  )}
                 </div>
               </div>
 

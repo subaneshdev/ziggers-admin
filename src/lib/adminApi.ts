@@ -2,6 +2,7 @@ import { supabase } from './supabaseClient';
 import { 
   UserProfile, 
   KycDetail, 
+  KycStatus,
   Dispute, 
   DisputeStatus, 
   DisputeResolutionType,
@@ -77,29 +78,47 @@ export const adminApi = {
     }
 
     const sortedProfiles = [...profiles].sort((a, b) => {
-      const aPending = a.kyc_status === 'not_started' || a.worker_kyc_status === 'not_started' || a.kyc_status === 'pending';
-      const bPending = b.kyc_status === 'not_started' || b.worker_kyc_status === 'not_started' || b.kyc_status === 'pending';
+      const aPending = a.kyc_status === 'pending' || a.worker_kyc_status === 'pending';
+      const bPending = b.kyc_status === 'pending' || b.worker_kyc_status === 'pending';
       if (aPending && !bPending) return -1;
       if (!aPending && bPending) return 1;
+      const aNotStarted = a.kyc_status === 'not_started' || a.worker_kyc_status === 'not_started';
+      const bNotStarted = b.kyc_status === 'not_started' || b.worker_kyc_status === 'not_started';
+      if (aNotStarted && !bNotStarted) return -1;
+      if (!aNotStarted && bNotStarted) return 1;
       return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
     });
 
     return sortedProfiles.map((p) => {
-      const isPending = p.kyc_status === 'not_started' || p.worker_kyc_status === 'not_started' || p.kyc_status === 'pending';
-      const name = p.worker_name || p.employer_name || (p.mobile ? `User ${p.mobile}` : `User ${p.id.slice(0, 6)}`);
+      const isPending = p.kyc_status === 'pending' || p.worker_kyc_status === 'pending';
+      const isApproved = p.kyc_status === 'approved' || p.worker_kyc_status === 'approved';
+      const isRejected = p.kyc_status === 'rejected' || p.worker_kyc_status === 'rejected';
+
+      let status: KycStatus = 'NOT_STARTED';
+      if (isPending) {
+        status = 'PENDING';
+      } else if (isApproved) {
+        status = 'APPROVED';
+      } else if (isRejected) {
+        status = 'REJECTED';
+      } else {
+        status = 'NOT_STARTED';
+      }
+
+      const name = p.worker_name || p.employer_name || p.full_name || (p.mobile ? `User ${p.mobile}` : `User ${p.id.slice(0, 6)}`);
       
       return {
         userId: p.id,
         name,
-        email: p.mobile ? `${p.mobile}@ziggers.in` : `${p.id.slice(0, 8)}@ziggers.in`,
+        email: p.email || (p.mobile ? `${p.mobile}@ziggers.in` : `${p.id.slice(0, 8)}@ziggers.in`),
         phone: p.mobile || 'N/A',
-        roleType: (p.employer_name && p.employer_name.trim() !== '') ? 'employer' : ((p.worker_name && p.worker_name.trim() !== '') ? 'worker' : (p.role === 'employer' ? 'employer' : 'worker')),
-        kycStatus: isPending ? 'PENDING' : (p.kyc_status?.toUpperCase() as any) || 'PENDING',
+        roleType: (p.employer_name && p.employer_name.trim() !== '') ? 'employer' : ((p.worker_name && p.worker_name.trim() !== '') ? 'worker' : 'worker'),
+        kycStatus: status,
         trustScore: p.trust_score || 0,
-        avatarUrl: '',
-        city: 'India',
+        avatarUrl: p.profile_photo_url || p.selfie_url || '',
+        city: p.city || p.state || 'India',
         createdAt: p.created_at || new Date().toISOString(),
-        organizationName: p.organization_id || undefined,
+        organizationName: p.business_name || p.organization_id || undefined,
       };
     });
   },
@@ -116,7 +135,10 @@ export const adminApi = {
     }
 
     const name = p.worker_name || p.full_name || p.employer_name || p.email?.split('@')[0] || (p.mobile ? `User ${p.mobile}` : `User ${userId.slice(0, 6)}`);
-    const isPending = p.kyc_status === 'not_started' || p.worker_kyc_status === 'not_started' || p.kyc_status === 'pending';
+    const isPending = p.kyc_status === 'pending' || p.worker_kyc_status === 'pending';
+    const isApproved = p.kyc_status === 'approved' || p.worker_kyc_status === 'approved';
+    const isRejected = p.kyc_status === 'rejected' || p.worker_kyc_status === 'rejected';
+    const kycStatus: KycStatus = isPending ? 'PENDING' : isApproved ? 'APPROVED' : isRejected ? 'REJECTED' : 'NOT_STARTED';
 
     return {
       userId: p.id,
@@ -124,7 +146,7 @@ export const adminApi = {
       email: p.email || `${p.mobile || p.id.slice(0, 8)}@ziggers.in`,
       phone: p.mobile || 'N/A',
       roleType: p.employer_name || p.business_name ? 'employer' : 'worker',
-      kycStatus: isPending ? 'PENDING' : (p.kyc_status?.toUpperCase() as any) || 'APPROVED',
+      kycStatus,
       submittedAt: p.created_at || new Date().toISOString(),
       aadhaarNumber: p.id_card_number || 'DIDIT_VERIFIED',
       aadhaarFrontUrl: p.id_card_front_url || p.profile_photo_url || '',
@@ -677,14 +699,39 @@ export const adminApi = {
       ? Number((completedTasks.reduce((acc, t) => acc + (Number(t.payout) || 0), 0) / Math.max(1, Math.ceil((Date.now() - new Date(completedTasks[0]?.created_at || Date.now()).getTime()) / (7 * 24 * 60 * 60 * 1000)))).toFixed(2))
       : 0;
 
-    // Work categories from live tasks (grouped by task title or location)
+    // Work categories from live tasks (classified properly into Catering, Pamphlet Distribution, Packers & Movers, etc.)
     const categoryCounts: Record<string, { count: number; totalPay: number; completed: number }> = {};
     allTasks.forEach(t => {
-      const cat = (t.title && String(t.title).trim().length > 0) ? String(t.title).trim() : 'General Tasks';
+      const c = (t.category || '').toLowerCase().trim();
+      const title = (t.title || '').toLowerCase().trim();
+
+      let cat = 'General Support';
+      if (c.includes('cater') || title.includes('cater')) {
+        cat = 'Catering Services';
+      } else if (c.includes('pamphlet') || title.includes('pamphlet') || title.includes('flyer') || title.includes('brochure')) {
+        cat = 'Pamphlet Distribution';
+      } else if (c.includes('packer') || title.includes('packer') || c.includes('mover') || title.includes('mover') || title.includes('weight') || title.includes('loading')) {
+        cat = 'Packers & Movers';
+      } else if (c.includes('delivery') || title.includes('delivery') || title.includes('courier')) {
+        cat = 'Delivery & Courier';
+      } else if (c.includes('volunteer') || title.includes('volunteer') || title.includes('installation') || title.includes('app installation')) {
+        cat = 'Volunteers & Promotions';
+      } else if (c.includes('retail') || title.includes('retail') || title.includes('store') || title.includes('shop')) {
+        cat = 'Retail & Store Support';
+      } else if (c.includes('event') || title.includes('event') || title.includes('usher')) {
+        cat = 'Event Staffing';
+      } else if (c.includes('cleaning') || title.includes('cleaning') || title.includes('housekeeping')) {
+        cat = 'Cleaning & Housekeeping';
+      } else if (t.category && String(t.category).trim().length > 0) {
+        cat = String(t.category).trim().replace(/\b\w/g, (l: string) => l.toUpperCase());
+      } else if (t.title && String(t.title).trim().length > 0) {
+        cat = String(t.title).trim().replace(/\b\w/g, (l: string) => l.toUpperCase());
+      }
+
       if (!categoryCounts[cat]) categoryCounts[cat] = { count: 0, totalPay: 0, completed: 0 };
       categoryCounts[cat].count++;
       categoryCounts[cat].totalPay += Number(t.payout) || 0;
-      if (t.status === 'completed' || t.payment_status === 'paid') categoryCounts[cat].completed++;
+      if (t.status === 'completed' || t.status === 'COMPLETED' || t.payment_status === 'paid') categoryCounts[cat].completed++;
     });
     const workCategories = Object.entries(categoryCounts).map(([name, stats]) => ({
       name,

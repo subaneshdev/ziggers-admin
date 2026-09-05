@@ -1,5 +1,5 @@
 export type RoleType = 'worker' | 'employer';
-export type KycStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'RESUBMIT_REQUIRED';
+export type KycStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'RESUBMIT_REQUIRED' | 'NOT_STARTED';
 
 export interface UserProfile {
   userId: string;

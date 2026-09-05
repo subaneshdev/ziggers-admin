@@ -65,10 +65,12 @@ export const KycDetailScreen: React.FC = () => {
                 ? 'bg-[#0F8B5F]/15 text-[#0F8B5F] border-[#0F8B5F]/30'
                 : detail.kycStatus === 'PENDING'
                 ? 'bg-[#D97706]/15 text-[#D97706] border-[#D97706]/30'
+                : detail.kycStatus === 'NOT_STARTED'
+                ? 'bg-[#665C54]/15 text-[#665C54] border-[#665C54]/30'
                 : 'bg-[#DC2626]/15 text-[#DC2626] border-[#DC2626]/30'
             }`}
           >
-            {detail.kycStatus}
+            {detail.kycStatus === 'NOT_STARTED' ? 'KYC NOT STARTED' : detail.kycStatus}
           </span>
         </div>
       </div>

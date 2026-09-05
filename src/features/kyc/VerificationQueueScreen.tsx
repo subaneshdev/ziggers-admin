@@ -20,7 +20,7 @@ export const VerificationQueueScreen: React.FC = () => {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<'ALL' | 'worker' | 'employer'>('ALL');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'NOT_STARTED' | 'APPROVED' | 'REJECTED'>('ALL');
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ['verificationQueueUsers'],
@@ -39,6 +39,7 @@ export const VerificationQueueScreen: React.FC = () => {
   });
 
   const pendingCount = users.filter(u => u.kycStatus === 'PENDING').length;
+  const notStartedCount = users.filter(u => u.kycStatus === 'NOT_STARTED').length;
   const approvedCount = users.filter(u => u.kycStatus === 'APPROVED').length;
   const rejectedCount = users.filter(u => u.kycStatus === 'REJECTED').length;
 
@@ -57,7 +58,7 @@ export const VerificationQueueScreen: React.FC = () => {
       </div>
 
       {/* Overview Stat Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-numeric">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 font-numeric">
         <div className="p-4 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
           <div className="flex items-center justify-between text-[#665C54] text-xs font-medium">
             <span>Pending Review</span>
@@ -65,6 +66,15 @@ export const VerificationQueueScreen: React.FC = () => {
           </div>
           <div className="text-xl font-extrabold text-[#D97706] mt-1">{pendingCount}</div>
           <div className="text-[11px] text-[#665C54] mt-0.5">Awaiting manual adjudication</div>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
+          <div className="flex items-center justify-between text-[#665C54] text-xs font-medium">
+            <span>KYC Not Started</span>
+            <Clock className="w-4 h-4 text-[#665C54]" />
+          </div>
+          <div className="text-xl font-extrabold text-[#665C54] mt-1">{notStartedCount}</div>
+          <div className="text-[11px] text-[#665C54] mt-0.5">Profiles pending KYC submission</div>
         </div>
 
         <div className="p-4 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
@@ -111,7 +121,7 @@ export const VerificationQueueScreen: React.FC = () => {
 
           <div className="flex items-center space-x-2">
             <span className="text-[11px] text-[#665C54] font-semibold uppercase">Status:</span>
-            {(['ALL', 'PENDING', 'APPROVED', 'REJECTED'] as const).map((st) => (
+            {(['ALL', 'PENDING', 'NOT_STARTED', 'APPROVED', 'REJECTED'] as const).map((st) => (
               <button
                 key={st}
                 onClick={() => setStatusFilter(st)}
@@ -121,7 +131,7 @@ export const VerificationQueueScreen: React.FC = () => {
                     : 'bg-[#F0EBE1] text-[#5C524B] hover:text-[#2C221E] border border-[#EBE4D8]'
                 }`}
               >
-                {st}
+                {st === 'NOT_STARTED' ? 'NOT STARTED' : st}
               </button>
             ))}
           </div>
@@ -198,10 +208,12 @@ export const VerificationQueueScreen: React.FC = () => {
                             ? 'bg-[#0F8B5F]/15 text-[#0F8B5F] border-[#0F8B5F]/30'
                             : user.kycStatus === 'PENDING'
                             ? 'bg-[#D97706]/15 text-[#D97706] border-[#D97706]/30'
+                            : user.kycStatus === 'NOT_STARTED'
+                            ? 'bg-[#665C54]/15 text-[#665C54] border-[#665C54]/30'
                             : 'bg-[#DC2626]/15 text-[#DC2626] border-[#DC2626]/30'
                         }`}
                       >
-                        {user.kycStatus}
+                        {user.kycStatus === 'NOT_STARTED' ? 'KYC NOT STARTED' : user.kycStatus}
                       </span>
                     </td>
 
