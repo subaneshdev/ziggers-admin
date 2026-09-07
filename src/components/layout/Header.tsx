@@ -85,12 +85,12 @@ export const Header: React.FC<HeaderProps> = ({ onRefreshData, onToggleMobileSid
   const activeZigs = zigs.filter(z => z.status !== 'COMPLETED' && z.status !== 'CANCELLED' && z.status !== 'EXPIRED');
 
   return (
-    <header className="h-16 px-3 sm:px-6 bg-[#FFFFFF] border-b border-[#EBE4D8] shadow-[0_2px_15px_rgba(44,34,30,0.03)] flex items-center justify-between sticky top-0 z-30 font-poppins">
+    <header className="h-16 px-3 sm:px-6 bg-[#FFFFFF] border-b border-[#EBE4D8] shadow-[0_2px_15px_rgba(44,34,30,0.03)] flex items-center justify-between sticky top-0 z-30 font-poppins w-full max-w-full">
       {/* Left: Mobile Menu Toggle & Breadcrumbs */}
-      <div className="flex items-center space-x-2 sm:space-x-3 min-w-0">
+      <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1 mr-2">
         <button
           onClick={onToggleMobileSidebar}
-          className="lg:hidden p-2 rounded-xl bg-[#F0EBE1] hover:bg-[#EBE4D8] text-[#2C221E] border border-[#EBE4D8] transition-colors focus:outline-none shrink-0"
+          className="lg:hidden p-2 rounded-xl bg-[#F0EBE1] hover:bg-[#EBE4D8] text-[#2C221E] border border-[#EBE4D8] transition-colors focus:outline-none shrink-0 min-h-[38px] min-w-[38px] flex items-center justify-center"
           aria-label="Open mobile navigation menu"
         >
           <Menu className="w-5 h-5 text-[#2C221E]" />
@@ -101,7 +101,7 @@ export const Header: React.FC<HeaderProps> = ({ onRefreshData, onToggleMobileSid
             <Shield className="w-4 h-4 sm:w-5 h-5 text-[#C69432]" />
           </div>
           <div className="min-w-0">
-            <h1 className="text-xs sm:text-sm font-bold text-[#2C221E] tracking-tight truncate max-w-[130px] xs:max-w-[180px] sm:max-w-xs md:max-w-md">
+            <h1 className="text-xs sm:text-sm font-bold text-[#2C221E] tracking-tight truncate">
               {getPageTitle(location.pathname)}
             </h1>
             <div className="hidden sm:flex items-center space-x-2 text-[11px] text-[#665C54]">
@@ -125,16 +125,15 @@ export const Header: React.FC<HeaderProps> = ({ onRefreshData, onToggleMobileSid
           />
         </div>
 
-        {/* Refresh Button */}
+        {/* Refresh Button - Icon only on mobile, Icon + text on sm+ */}
         <button
           onClick={handleGlobalRefresh}
           disabled={isRefreshing}
-          className="flex items-center space-x-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-xl bg-[#2C221E] hover:bg-[#3D2F2A] text-white text-xs font-bold transition-all disabled:opacity-50 min-h-[38px] shadow-sm"
+          className="p-2 sm:px-3.5 sm:py-1.5 rounded-xl bg-[#2C221E] hover:bg-[#3D2F2A] text-white text-xs font-bold transition-all disabled:opacity-50 min-h-[38px] min-w-[38px] flex items-center justify-center space-x-1.5 shadow-sm shrink-0"
           title="Trigger manual analytics snapshot computation"
         >
-          <RefreshCw className={`w-3.5 h-3.5 text-[#C69432] ${isRefreshing ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-4 h-4 sm:w-3.5 sm:h-3.5 text-[#C69432] ${isRefreshing ? 'animate-spin' : ''}`} />
           <span className="hidden sm:inline">{isRefreshing ? 'Computing...' : 'Refresh Snapshots'}</span>
-          <span className="sm:hidden">{isRefreshing ? '...' : 'Refresh'}</span>
         </button>
 
         {/* Live System Time indicator - hidden on < xl */}
@@ -146,7 +145,7 @@ export const Header: React.FC<HeaderProps> = ({ onRefreshData, onToggleMobileSid
         {/* Notifications Bell Button */}
         <button
           onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
-          className={`relative p-2 rounded-xl border transition-colors ${
+          className={`relative p-2 rounded-xl border transition-colors min-h-[38px] min-w-[38px] flex items-center justify-center shrink-0 ${
             isNotificationsOpen
               ? 'bg-[#2C221E] text-white border-[#2C221E]'
               : 'bg-[#F0EBE1] hover:bg-[#EBE4D8] text-[#2C221E] border-[#EBE4D8]'
@@ -163,7 +162,7 @@ export const Header: React.FC<HeaderProps> = ({ onRefreshData, onToggleMobileSid
 
         {/* Real-time Notifications & Live Zigs Drawer Popover - Viewport safe */}
         {isNotificationsOpen && (
-          <div className="fixed sm:absolute right-2 sm:right-0 top-16 sm:top-14 w-[calc(100vw-1rem)] sm:w-96 max-w-sm rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-2xl p-4 space-y-3 z-50 text-xs font-poppins">
+          <div className="fixed sm:absolute inset-x-2 sm:inset-x-auto right-auto sm:right-0 top-16 sm:top-14 w-auto sm:w-96 max-w-sm rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-2xl p-4 space-y-3 z-50 text-xs font-poppins">
             <div className="flex items-center justify-between border-b border-[#EBE4D8] pb-2.5">
               <div className="flex items-center space-x-2">
                 <Briefcase className="w-4 h-4 text-[#C69432]" />

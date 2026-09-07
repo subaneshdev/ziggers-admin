@@ -125,7 +125,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       <aside
         className={`fixed top-0 left-0 bottom-0 z-50 bg-[#FFFFFF] border-r border-[#EBE4D8] flex flex-col transition-all duration-300 ease-in-out font-poppins shadow-[2px_0_20px_rgba(44,34,30,0.06)] ${
-          isMobileOpen ? 'translate-x-0 w-72' : '-translate-x-full lg:translate-x-0'
+          isMobileOpen ? 'translate-x-0 w-72 max-w-[85vw]' : '-translate-x-full lg:translate-x-0'
         } ${collapsed ? 'lg:w-20' : 'lg:w-72'}`}
       >
         {/* Brand Header (Official Ziggers Logo Style) */}
@@ -158,7 +158,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {/* Mobile Close Button */}
           <button
             onClick={onCloseMobile}
-            className="lg:hidden p-1.5 rounded-lg text-[#665C54] hover:text-[#2C221E] hover:bg-[#F0EBE1] transition-colors"
+            className="lg:hidden p-2 rounded-lg text-[#665C54] hover:text-[#2C221E] hover:bg-[#F0EBE1] transition-colors min-h-[38px] min-w-[38px] flex items-center justify-center"
             title="Close Navigation Drawer"
           >
             <X className="w-5 h-5" />

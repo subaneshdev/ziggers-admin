@@ -91,7 +91,7 @@ export const AdminDashboard: React.FC = () => {
   return (
     <div className="space-y-6 font-poppins text-xs text-[#2C221E]">
       {/* 8 Analytics Module Sub-Tabs Navigation */}
-      <div className="flex items-center space-x-1.5 overflow-x-auto pb-2 scrollbar-none border-b border-[#EBE4D8] -mx-3 px-3 sm:mx-0 sm:px-0">
+      <div className="flex items-center space-x-1.5 overflow-x-auto pb-2 no-scrollbar scrollbar-none border-b border-[#EBE4D8] -mx-3.5 px-3.5 sm:mx-0 sm:px-0">
         {TABS.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.key;
@@ -116,17 +116,17 @@ export const AdminDashboard: React.FC = () => {
       {isLoading ? (
         renderSkeleton()
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-5 sm:space-y-6 min-w-0 w-full">
           {/* TAB 1: OVERVIEW & AGGREGATE BUSINESS METRICS */}
           {activeTab === 'overview' && (
-            <div className="space-y-6">
+            <div className="space-y-5 sm:space-y-6 min-w-0 w-full">
               {/* Aggregate Business Metrics Top Banner */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#FFFFFF] p-5 rounded-2xl border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#FFFFFF] p-4 sm:p-5 rounded-2xl border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
                 <div>
-                  <h2 className="text-base font-extrabold text-[#2C221E] uppercase tracking-wide">
+                  <h2 className="text-sm sm:text-base font-extrabold text-[#2C221E] uppercase tracking-wide">
                     AGGREGATE BUSINESS METRICS
                   </h2>
-                  <p className="text-[11px] text-[#665C54] mt-1 font-numeric">
+                  <p className="text-[10px] sm:text-[11px] text-[#665C54] mt-1 font-numeric break-all sm:break-normal">
                     Last updated: {snapshot?.updatedAt ? new Date(snapshot.updatedAt).toISOString().replace('T', ' ').slice(0, 26) : '2026-08-15 05:50:35.434582'} (Pre-computed cache)
                   </p>
                 </div>
@@ -134,7 +134,7 @@ export const AdminDashboard: React.FC = () => {
                 <button
                   onClick={handleManualRefresh}
                   disabled={isRefreshing}
-                  className="flex items-center justify-center space-x-2 px-4 py-2.5 rounded-xl bg-[#2C221E] hover:bg-[#3D2F2A] text-white font-bold text-xs transition-colors border border-[#EBE4D8] shadow-sm self-start sm:self-auto"
+                  className="flex items-center justify-center space-x-2 px-4 py-2.5 rounded-xl bg-[#2C221E] hover:bg-[#3D2F2A] text-white font-bold text-xs transition-colors border border-[#EBE4D8] shadow-sm self-start sm:self-auto min-h-[38px]"
                 >
                   <Zap className={`w-3.5 h-3.5 fill-current text-[#C69432] ${isRefreshing ? 'animate-spin' : ''}`} />
                   <span>Recalculate</span>
@@ -145,7 +145,7 @@ export const AdminDashboard: React.FC = () => {
               <div className="space-y-3">
                 <h3 className="text-sm font-bold text-[#2C221E]">Platform Overview</h3>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 font-numeric">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 font-numeric">
                   {/* TOTAL ZIGS */}
                   <div className="p-4 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] flex items-start justify-between min-h-[105px]">
                     <div>
@@ -155,7 +155,7 @@ export const AdminDashboard: React.FC = () => {
                       <div className="text-2xl font-black text-[#2C221E] mt-2">
                         {snapshot?.metricValue?.total_zigs ?? 0}
                       </div>
-                      <div className="text-[10px] text-[#665C54] mt-1 font-medium whitespace-nowrap">
+                      <div className="text-[10px] text-[#665C54] mt-1 font-medium">
                         Today: {snapshot?.metricValue?.today_zigs ?? 0} | Week: {snapshot?.metricValue?.week_zigs ?? 0}
                       </div>
                     </div>
@@ -222,7 +222,7 @@ export const AdminDashboard: React.FC = () => {
                       <div className="text-2xl font-black text-[#2C221E] mt-2">
                         {formatCurrency(snapshot?.metricValue?.total_gmv ?? snapshot?.metricValue?.gmv ?? 0)}
                       </div>
-                      <div className="text-[10px] text-[#665C54] mt-1 font-medium whitespace-nowrap">
+                      <div className="text-[10px] text-[#665C54] mt-1 font-medium">
                         Revenue: {formatCurrency(snapshot?.metricValue?.platform_revenue ?? snapshot?.metricValue?.totalRevenue ?? 0)}
                       </div>
                     </div>
@@ -334,17 +334,17 @@ export const AdminDashboard: React.FC = () => {
               </div>
 
               {/* GMV Growth Area Chart */}
-              <div className="p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] space-y-4">
-                <div className="flex items-center justify-between">
+              <div className="p-4 sm:p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] space-y-4 min-w-0 w-full overflow-hidden">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <h3 className="text-sm font-bold text-[#2C221E]">
                     Gross Merchandise Value & Revenue Trajectory (₹)
                   </h3>
-                  <span className="text-[11px] font-numeric text-[#C69432] font-semibold bg-[#F0EBE1] px-2.5 py-1 rounded-lg border border-[#EBE4D8]">
+                  <span className="text-[11px] font-numeric text-[#C69432] font-semibold bg-[#F0EBE1] px-2.5 py-1 rounded-lg border border-[#EBE4D8] self-start sm:self-auto">
                     Monthly GMV Audit
                   </span>
                 </div>
 
-                <div className="h-72 w-full">
+                <div className="h-64 sm:h-72 w-full min-w-0">
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={snapshot?.metricValue?.gmv_history ?? snapshot?.metricValue?.gmvHistory ?? []}>
                       <defs>
@@ -358,8 +358,8 @@ export const AdminDashboard: React.FC = () => {
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#EBE4D8" />
-                      <XAxis dataKey="month" stroke="#665C54" tick={{ fontSize: 11 }} />
-                      <YAxis stroke="#665C54" tick={{ fontSize: 11 }} />
+                      <XAxis dataKey="month" stroke="#665C54" tick={{ fontSize: 10 }} />
+                      <YAxis stroke="#665C54" tick={{ fontSize: 10 }} />
                       <Tooltip contentStyle={{ backgroundColor: '#FFFFFF', borderColor: '#EBE4D8', borderRadius: '12px', color: '#2C221E' }} />
                       <Area type="monotone" dataKey="gmv" stroke="#C69432" strokeWidth={2.5} fillOpacity={1} fill="url(#colorGmv)" name="GMV (₹)" />
                       <Area type="monotone" dataKey="revenue" stroke="#2C221E" strokeWidth={2.5} fillOpacity={1} fill="url(#colorRev)" name="Revenue (₹)" />
@@ -372,13 +372,13 @@ export const AdminDashboard: React.FC = () => {
 
           {/* TAB 2: WORK CATEGORIES */}
           {activeTab === 'work_categories' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div className="p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5 min-w-0 w-full">
+              <div className="p-4 sm:p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] space-y-3 min-w-0 w-full overflow-hidden">
                 <h3 className="text-sm font-bold text-[#2C221E]">Category Breakdown</h3>
-                <div className="h-64">
+                <div className="h-64 min-w-0 w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                      <Pie data={snapshot?.metricValue?.work_categories || snapshot?.metricValue?.categories || []} dataKey="count" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
+                      <Pie data={snapshot?.metricValue?.work_categories || snapshot?.metricValue?.categories || []} dataKey="count" nameKey="name" cx="50%" cy="50%" outerRadius={75} label>
                         {(snapshot?.metricValue?.work_categories || snapshot?.metricValue?.categories || []).map((_: any, index: number) => (
                           <Cell key={`cell-${index}`} fill={BRAND_COLORS[index % BRAND_COLORS.length]} />
                         ))}
@@ -390,13 +390,13 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </div>
 
-              <div className="p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] space-y-3">
+              <div className="p-4 sm:p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] space-y-3 min-w-0 w-full overflow-hidden">
                 <h3 className="text-sm font-bold text-[#2C221E]">Category Volume Data</h3>
                 <div className="divide-y divide-[#EBE4D8]">
                   {(snapshot?.metricValue?.work_categories || snapshot?.metricValue?.categories || []).map((cat: any, i: number) => (
                     <div key={i} className="py-2.5 flex items-center justify-between font-numeric">
-                      <span className="font-semibold text-[#2C221E]">{cat.name || cat.category}</span>
-                      <div className="text-right">
+                      <span className="font-semibold text-[#2C221E] truncate max-w-[55%]">{cat.name || cat.category}</span>
+                      <div className="text-right shrink-0">
                         <span className="text-xs font-bold text-[#C69432]">{cat.count || cat.totalZigs} Zigs</span>
                         <span className="text-[10px] text-[#665C54] ml-2">Avg ₹{cat.avgPay || 0}</span>
                       </div>
@@ -412,14 +412,14 @@ export const AdminDashboard: React.FC = () => {
 
           {/* TAB 3: WORKER DEMOGRAPHICS */}
           {activeTab === 'worker_demographics' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5 min-w-0 w-full">
               {/* Role Distribution Pie Chart */}
-              <div className="p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] space-y-3">
+              <div className="p-4 sm:p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] space-y-3 min-w-0 w-full overflow-hidden">
                 <h3 className="text-sm font-bold text-[#2C221E]">User Role Distribution</h3>
-                <div className="h-64">
+                <div className="h-64 min-w-0 w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                      <Pie data={snapshot?.metricValue?.genderSplit || []} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
+                      <Pie data={snapshot?.metricValue?.genderSplit || []} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={75} label>
                         {(snapshot?.metricValue?.genderSplit || []).map((_: any, index: number) => (
                           <Cell key={`cell-${index}`} fill={BRAND_COLORS[index % BRAND_COLORS.length]} />
                         ))}
@@ -432,7 +432,7 @@ export const AdminDashboard: React.FC = () => {
               </div>
 
               {/* User Breakdown Table */}
-              <div className="p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] space-y-3">
+              <div className="p-4 sm:p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] space-y-3 min-w-0 w-full overflow-hidden">
                 <h3 className="text-sm font-bold text-[#2C221E]">User Breakdown</h3>
                 <div className="divide-y divide-[#EBE4D8]">
                   {(snapshot?.metricValue?.ageDistribution || []).map((item: any, i: number) => (
@@ -457,33 +457,33 @@ export const AdminDashboard: React.FC = () => {
 
           {/* TAB 4: WORKER INCOME */}
           {activeTab === 'worker_income' && (
-            <div className="space-y-5">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
+            <div className="space-y-4 sm:space-y-5 min-w-0 w-full">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
+                <div className="p-4 sm:p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
                   <span className="text-[11px] font-bold text-[#665C54] uppercase block">Total GMV (Completed)</span>
-                  <span className="text-2xl font-black text-[#2C221E] font-numeric mt-2 block">{formatCurrency(snapshot?.metricValue?.total_gmv ?? 0)}</span>
+                  <span className="text-xl sm:text-2xl font-black text-[#2C221E] font-numeric mt-2 block">{formatCurrency(snapshot?.metricValue?.total_gmv ?? 0)}</span>
                   <span className="text-[10px] text-[#665C54] mt-1 block">Sum of all completed task payouts</span>
                 </div>
-                <div className="p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
+                <div className="p-4 sm:p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
                   <span className="text-[11px] font-bold text-[#665C54] uppercase block">Platform Revenue (7.5%)</span>
-                  <span className="text-2xl font-black text-[#0F8B5F] font-numeric mt-2 block">{formatCurrency(snapshot?.metricValue?.platform_revenue ?? 0)}</span>
+                  <span className="text-xl sm:text-2xl font-black text-[#0F8B5F] font-numeric mt-2 block">{formatCurrency(snapshot?.metricValue?.platform_revenue ?? 0)}</span>
                   <span className="text-[10px] text-[#665C54] mt-1 block">Commission from completed Zigs</span>
                 </div>
-                <div className="p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
+                <div className="p-4 sm:p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] sm:col-span-2 md:col-span-1">
                   <span className="text-[11px] font-bold text-[#665C54] uppercase block">Avg Weekly Income</span>
-                  <span className="text-2xl font-black text-[#C69432] font-numeric mt-2 block">{formatCurrency(snapshot?.metricValue?.average_weekly_income ?? 0)}</span>
+                  <span className="text-xl sm:text-2xl font-black text-[#C69432] font-numeric mt-2 block">{formatCurrency(snapshot?.metricValue?.average_weekly_income ?? 0)}</span>
                   <span className="text-[10px] text-[#665C54] mt-1 block">Per worker average</span>
                 </div>
               </div>
               {/* GMV Monthly Chart */}
-              <div className="p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] space-y-3">
+              <div className="p-4 sm:p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] space-y-3 min-w-0 w-full overflow-hidden">
                 <h3 className="text-sm font-bold text-[#2C221E]">Monthly GMV & Revenue</h3>
-                <div className="h-72 w-full">
+                <div className="h-64 sm:h-72 w-full min-w-0">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={snapshot?.metricValue?.gmv_history ?? []}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#EBE4D8" />
-                      <XAxis dataKey="month" stroke="#665C54" tick={{ fontSize: 11 }} />
-                      <YAxis stroke="#665C54" tick={{ fontSize: 11 }} />
+                      <XAxis dataKey="month" stroke="#665C54" tick={{ fontSize: 10 }} />
+                      <YAxis stroke="#665C54" tick={{ fontSize: 10 }} />
                       <Tooltip contentStyle={{ backgroundColor: '#FFFFFF', borderColor: '#EBE4D8', borderRadius: '12px' }} />
                       <Bar dataKey="gmv" fill="#C69432" radius={[6, 6, 0, 0]} name="GMV (₹)" />
                       <Bar dataKey="revenue" fill="#2C221E" radius={[6, 6, 0, 0]} name="Revenue (₹)" />
@@ -496,31 +496,31 @@ export const AdminDashboard: React.FC = () => {
 
           {/* TAB 5: EMPLOYER PERFORMANCE */}
           {activeTab === 'employer_metrics' && (
-            <div className="space-y-5">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
+            <div className="space-y-4 sm:space-y-5 min-w-0 w-full">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
+                <div className="p-4 sm:p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
                   <span className="text-[11px] font-bold text-[#665C54] uppercase block">Total Employers</span>
-                  <span className="text-2xl font-black text-[#2C221E] font-numeric mt-2 block">{snapshot?.metricValue?.totalEmployers ?? 0}</span>
+                  <span className="text-xl sm:text-2xl font-black text-[#2C221E] font-numeric mt-2 block">{snapshot?.metricValue?.totalEmployers ?? 0}</span>
                 </div>
-                <div className="p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
+                <div className="p-4 sm:p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
                   <span className="text-[11px] font-bold text-[#665C54] uppercase block">Total Zigs Posted</span>
-                  <span className="text-2xl font-black text-[#2C221E] font-numeric mt-2 block">{snapshot?.metricValue?.total_zigs ?? 0}</span>
+                  <span className="text-xl sm:text-2xl font-black text-[#2C221E] font-numeric mt-2 block">{snapshot?.metricValue?.total_zigs ?? 0}</span>
                 </div>
-                <div className="p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
+                <div className="p-4 sm:p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] sm:col-span-2 md:col-span-1">
                   <span className="text-[11px] font-bold text-[#665C54] uppercase block">Fulfillment Rate</span>
-                  <span className="text-2xl font-black text-[#0F8B5F] font-numeric mt-2 block">{snapshot?.metricValue?.fulfillmentRate ?? 0}%</span>
+                  <span className="text-xl sm:text-2xl font-black text-[#0F8B5F] font-numeric mt-2 block">{snapshot?.metricValue?.fulfillmentRate ?? 0}%</span>
                 </div>
               </div>
-              <div className="p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] space-y-3">
+              <div className="p-4 sm:p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] space-y-3 min-w-0 w-full overflow-hidden">
                 <h3 className="text-sm font-bold text-[#2C221E]">Task Status Breakdown</h3>
-                <div className="h-64">
+                <div className="h-64 min-w-0 w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie data={[
                         { name: 'Completed', value: snapshot?.metricValue?.completedZigs ?? 0 },
                         { name: 'Active', value: snapshot?.metricValue?.activeZigs ?? 0 },
                         { name: 'Cancelled', value: snapshot?.metricValue?.cancelled_zigs ?? 0 },
-                      ].filter(d => d.value > 0)} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
+                      ].filter(d => d.value > 0)} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={75} label>
                         {[0, 1, 2].map((index) => (
                           <Cell key={`cell-${index}`} fill={['#0F8B5F', '#D97706', '#DC2626'][index]} />
                         ))}
@@ -536,32 +536,32 @@ export const AdminDashboard: React.FC = () => {
 
           {/* TAB 6: TRUST & SAFETY */}
           {activeTab === 'trust_safety' && (
-            <div className="space-y-5">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
+            <div className="space-y-4 sm:space-y-5 min-w-0 w-full">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
+                <div className="p-4 sm:p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
                   <span className="text-[11px] font-bold text-[#665C54] uppercase block">Open Disputes</span>
-                  <span className="text-2xl font-black text-[#DC2626] font-numeric mt-2 block">{snapshot?.metricValue?.openDisputes ?? 0}</span>
+                  <span className="text-xl sm:text-2xl font-black text-[#DC2626] font-numeric mt-2 block">{snapshot?.metricValue?.openDisputes ?? 0}</span>
                   <span className="text-[10px] text-[#665C54] mt-1 block">Pending + Investigating</span>
                 </div>
-                <div className="p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
+                <div className="p-4 sm:p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
                   <span className="text-[11px] font-bold text-[#665C54] uppercase block">Total Users</span>
-                  <span className="text-2xl font-black text-[#2C221E] font-numeric mt-2 block">{snapshot?.metricValue?.totalUsers ?? 0}</span>
+                  <span className="text-xl sm:text-2xl font-black text-[#2C221E] font-numeric mt-2 block">{snapshot?.metricValue?.totalUsers ?? 0}</span>
                   <span className="text-[10px] text-[#665C54] mt-1 block">All registered profiles</span>
                 </div>
-                <div className="p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
+                <div className="p-4 sm:p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] sm:col-span-2 md:col-span-1">
                   <span className="text-[11px] font-bold text-[#665C54] uppercase block">Fulfillment Rate</span>
-                  <span className="text-2xl font-black text-[#0F8B5F] font-numeric mt-2 block">{snapshot?.metricValue?.fulfillmentRate ?? 0}%</span>
+                  <span className="text-xl sm:text-2xl font-black text-[#0F8B5F] font-numeric mt-2 block">{snapshot?.metricValue?.fulfillmentRate ?? 0}%</span>
                   <span className="text-[10px] text-[#665C54] mt-1 block">Completed / Total Zigs</span>
                 </div>
               </div>
-              <div className="p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
+              <div className="p-4 sm:p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] min-w-0 w-full overflow-hidden">
                 <h3 className="text-sm font-bold text-[#2C221E] mb-3">Platform Health</h3>
                 <div className="divide-y divide-[#EBE4D8] font-numeric">
-                  <div className="py-3 flex justify-between"><span className="text-xs text-[#665C54]">Workers Registered</span><span className="text-xs font-bold text-[#2C221E]">{snapshot?.metricValue?.totalWorkers ?? 0}</span></div>
-                  <div className="py-3 flex justify-between"><span className="text-xs text-[#665C54]">Employers Registered</span><span className="text-xs font-bold text-[#2C221E]">{snapshot?.metricValue?.totalEmployers ?? 0}</span></div>
-                  <div className="py-3 flex justify-between"><span className="text-xs text-[#665C54]">Completed Zigs</span><span className="text-xs font-bold text-[#0F8B5F]">{snapshot?.metricValue?.completedZigs ?? 0}</span></div>
-                  <div className="py-3 flex justify-between"><span className="text-xs text-[#665C54]">Active Zigs</span><span className="text-xs font-bold text-[#D97706]">{snapshot?.metricValue?.activeZigs ?? 0}</span></div>
-                  <div className="py-3 flex justify-between"><span className="text-xs text-[#665C54]">Cancelled Zigs</span><span className="text-xs font-bold text-[#DC2626]">{snapshot?.metricValue?.cancelled_zigs ?? 0}</span></div>
+                  <div className="py-2.5 sm:py-3 flex justify-between"><span className="text-xs text-[#665C54]">Workers Registered</span><span className="text-xs font-bold text-[#2C221E]">{snapshot?.metricValue?.totalWorkers ?? 0}</span></div>
+                  <div className="py-2.5 sm:py-3 flex justify-between"><span className="text-xs text-[#665C54]">Employers Registered</span><span className="text-xs font-bold text-[#2C221E]">{snapshot?.metricValue?.totalEmployers ?? 0}</span></div>
+                  <div className="py-2.5 sm:py-3 flex justify-between"><span className="text-xs text-[#665C54]">Completed Zigs</span><span className="text-xs font-bold text-[#0F8B5F]">{snapshot?.metricValue?.completedZigs ?? 0}</span></div>
+                  <div className="py-2.5 sm:py-3 flex justify-between"><span className="text-xs text-[#665C54]">Active Zigs</span><span className="text-xs font-bold text-[#D97706]">{snapshot?.metricValue?.activeZigs ?? 0}</span></div>
+                  <div className="py-2.5 sm:py-3 flex justify-between"><span className="text-xs text-[#665C54]">Cancelled Zigs</span><span className="text-xs font-bold text-[#DC2626]">{snapshot?.metricValue?.cancelled_zigs ?? 0}</span></div>
                 </div>
               </div>
             </div>
@@ -569,28 +569,28 @@ export const AdminDashboard: React.FC = () => {
 
           {/* TAB 7: GEOGRAPHIC HUBS */}
           {activeTab === 'geographic' && (
-            <div className="space-y-5">
-              <div className="p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] space-y-3">
+            <div className="space-y-4 sm:space-y-5 min-w-0 w-full">
+              <div className="p-4 sm:p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] space-y-3 min-w-0 w-full overflow-hidden">
                 <h3 className="text-sm font-bold text-[#2C221E]">Task Locations (from tasks.location_name)</h3>
-                <div className="h-72 w-full">
+                <div className="h-64 sm:h-72 w-full min-w-0">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={Array.isArray(snapshot?.metricValue) ? snapshot.metricValue : []}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#EBE4D8" />
                       <XAxis dataKey="city" stroke="#665C54" tick={{ fontSize: 10 }} angle={-30} textAnchor="end" height={60} />
-                      <YAxis stroke="#665C54" tick={{ fontSize: 11 }} />
+                      <YAxis stroke="#665C54" tick={{ fontSize: 10 }} />
                       <Tooltip contentStyle={{ backgroundColor: '#FFFFFF', borderColor: '#EBE4D8', borderRadius: '12px' }} />
                       <Bar dataKey="activeZigs" fill="#C69432" radius={[6, 6, 0, 0]} name="Zigs at Location" />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               </div>
-              <div className="p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
+              <div className="p-4 sm:p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] min-w-0 w-full overflow-hidden">
                 <h3 className="text-sm font-bold text-[#2C221E] mb-3">Location Directory</h3>
                 <div className="divide-y divide-[#EBE4D8] font-numeric max-h-80 overflow-y-auto">
                   {(Array.isArray(snapshot?.metricValue) ? snapshot.metricValue : []).map((loc: any, i: number) => (
                     <div key={i} className="py-2.5 flex items-center justify-between">
                       <span className="font-semibold text-[#2C221E] text-xs truncate max-w-[60%]">{loc.city}</span>
-                      <span className="text-xs font-bold text-[#C69432]">{loc.activeZigs} Zigs</span>
+                      <span className="text-xs font-bold text-[#C69432] shrink-0">{loc.activeZigs} Zigs</span>
                     </div>
                   ))}
                   {(Array.isArray(snapshot?.metricValue) ? snapshot.metricValue : []).length === 0 && (
@@ -603,10 +603,10 @@ export const AdminDashboard: React.FC = () => {
 
           {/* TAB 8: GROWTH VELOCITY */}
           {activeTab === 'growth_trends' && (
-            <div className="space-y-5">
-              <div className="p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] space-y-3">
+            <div className="space-y-4 sm:space-y-5 min-w-0 w-full">
+              <div className="p-4 sm:p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] space-y-3 min-w-0 w-full overflow-hidden">
                 <h3 className="text-sm font-bold text-[#2C221E]">Daily User Signups (Last 30 Days)</h3>
-                <div className="h-72 w-full">
+                <div className="h-64 sm:h-72 w-full min-w-0">
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={Array.isArray(snapshot?.metricValue) ? snapshot.metricValue : []}>
                       <defs>
@@ -617,20 +617,20 @@ export const AdminDashboard: React.FC = () => {
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#EBE4D8" />
                       <XAxis dataKey="month" stroke="#665C54" tick={{ fontSize: 10 }} angle={-30} textAnchor="end" height={60} />
-                      <YAxis stroke="#665C54" tick={{ fontSize: 11 }} />
+                      <YAxis stroke="#665C54" tick={{ fontSize: 10 }} />
                       <Tooltip contentStyle={{ backgroundColor: '#FFFFFF', borderColor: '#EBE4D8', borderRadius: '12px' }} />
                       <Area type="monotone" dataKey="userSignups" stroke="#C69432" strokeWidth={2.5} fillOpacity={1} fill="url(#colorSignups)" name="New Signups" />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
               </div>
-              <div className="p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
+              <div className="p-4 sm:p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] min-w-0 w-full overflow-hidden">
                 <h3 className="text-sm font-bold text-[#2C221E] mb-3">Signup Log</h3>
                 <div className="divide-y divide-[#EBE4D8] font-numeric max-h-80 overflow-y-auto">
                   {(Array.isArray(snapshot?.metricValue) ? snapshot.metricValue : []).map((day: any, i: number) => (
                     <div key={i} className="py-2.5 flex items-center justify-between">
                       <span className="font-semibold text-[#2C221E] text-xs">{day.month}</span>
-                      <span className="text-xs font-bold text-[#0F8B5F]">+{day.userSignups} users</span>
+                      <span className="text-xs font-bold text-[#0F8B5F] shrink-0">+{day.userSignups} users</span>
                     </div>
                   ))}
                   {(Array.isArray(snapshot?.metricValue) ? snapshot.metricValue : []).length === 0 && (

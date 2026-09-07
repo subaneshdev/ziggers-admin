@@ -40,62 +40,63 @@ export const OrganizationDetailsScreen: React.FC = () => {
   const { org, members, postedZigs, invoices } = detail;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 font-poppins text-xs text-[#2C221E]">
       {/* Header Bar */}
       <div className="flex items-center space-x-3">
         <button
           onClick={() => navigate('/admin/organizations')}
-          className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
+          className="p-2 rounded-xl bg-[#F0EBE1] border border-[#EBE4D8] text-[#2C221E] hover:bg-[#EBE4D8] transition-colors shrink-0"
+          title="Back to Organizations"
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <div>
-          <h2 className="text-xl font-bold text-slate-100 flex items-center space-x-2">
-            <span>{org.name}</span>
-            <span className="text-xs px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-400 font-mono border border-indigo-500/20">
+        <div className="min-w-0">
+          <h2 className="text-lg sm:text-xl font-bold text-[#2C221E] flex items-center space-x-2 truncate">
+            <span className="truncate">{org.name}</span>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#C69432]/10 text-[#C69432] font-numeric border border-[#C69432]/30 font-bold uppercase shrink-0">
               {org.tier}
             </span>
           </h2>
-          <p className="text-xs text-slate-400 font-mono mt-0.5">
+          <p className="text-[11px] text-[#665C54] font-numeric mt-0.5 truncate">
             Org ID: {org.orgId} • GSTIN: {org.taxId}
           </p>
         </div>
       </div>
 
       {/* Summary Stats Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800">
-          <span className="text-[11px] text-slate-400 font-mono uppercase block">Corporate Members</span>
-          <div className="text-xl font-black font-mono text-slate-100 mt-1">{members.length} Users</div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 font-numeric">
+        <div className="p-4 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
+          <span className="text-[11px] text-[#665C54] font-bold uppercase block">Corporate Members</span>
+          <div className="text-xl font-extrabold text-[#2C221E] mt-1">{members.length} Users</div>
         </div>
 
-        <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800">
-          <span className="text-[11px] text-slate-400 font-mono uppercase block">Active Enterprise Zigs</span>
-          <div className="text-xl font-black font-mono text-indigo-400 mt-1">{postedZigs.length} Posted</div>
+        <div className="p-4 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
+          <span className="text-[11px] text-[#665C54] font-bold uppercase block">Active Enterprise Zigs</span>
+          <div className="text-xl font-extrabold text-[#C69432] mt-1">{postedZigs.length} Posted</div>
         </div>
 
-        <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800">
-          <span className="text-[11px] text-slate-400 font-mono uppercase block">Cumulative Spend</span>
-          <div className="text-xl font-black font-mono text-emerald-400 mt-1">{formatCompactCurrency(org.totalSpend)}</div>
+        <div className="p-4 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
+          <span className="text-[11px] text-[#665C54] font-bold uppercase block">Cumulative Spend</span>
+          <div className="text-xl font-extrabold text-[#0F8B5F] mt-1">{formatCompactCurrency(org.totalSpend)}</div>
         </div>
 
-        <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800">
-          <span className="text-[11px] text-slate-400 font-mono uppercase block">Billing Email</span>
-          <div className="text-xs font-semibold text-slate-200 mt-1 truncate">{org.contactEmail}</div>
+        <div className="p-4 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
+          <span className="text-[11px] text-[#665C54] font-bold uppercase block">Billing Email</span>
+          <div className="text-xs font-semibold text-[#2C221E] mt-1 truncate">{org.contactEmail}</div>
         </div>
       </div>
 
       {/* Detail Sub-Tabs */}
-      <div className="p-6 rounded-2xl bg-slate-900/80 border border-slate-800 backdrop-blur-xl space-y-6">
-        <div className="flex items-center space-x-2 border-b border-slate-800 pb-3">
+      <div className="p-4 sm:p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] space-y-4 min-w-0 w-full overflow-hidden">
+        <div className="flex items-center space-x-2 border-b border-[#EBE4D8] pb-3 overflow-x-auto no-scrollbar scrollbar-none -mx-4 px-4 sm:mx-0 sm:px-0">
           {(['members', 'zigs', 'invoices'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`px-4 py-2 rounded-xl text-xs font-semibold uppercase transition-all ${
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors border shrink-0 ${
                 activeTab === tab
-                  ? 'bg-indigo-600 text-white shadow-md'
-                  : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+                  ? 'bg-[#2C221E] text-white border-[#2C221E] shadow-sm font-bold'
+                  : 'bg-[#F8F5EE] text-[#5C524B] hover:text-[#2C221E] border-[#EBE4D8]'
               }`}
             >
               {tab === 'members' ? `Members Roster (${members.length})` : tab === 'zigs' ? `Posted Zigs (${postedZigs.length})` : `Invoices (${invoices.length})`}
@@ -106,8 +107,8 @@ export const OrganizationDetailsScreen: React.FC = () => {
         {/* Members Roster */}
         {activeTab === 'members' && (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-950 text-slate-400 font-mono border-b border-slate-800 uppercase">
+            <table className="w-full text-left text-xs font-numeric">
+              <thead className="bg-[#F8F5EE] text-[#C69432] uppercase border-b border-[#EBE4D8]">
                 <tr>
                   <th className="py-2.5 px-3">Member Name</th>
                   <th className="py-2.5 px-3">Email Address</th>
@@ -116,15 +117,15 @@ export const OrganizationDetailsScreen: React.FC = () => {
                   <th className="py-2.5 px-3 text-right">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/80">
+              <tbody className="divide-y divide-[#EBE4D8]">
                 {members.map((m) => (
-                  <tr key={m.id} className="hover:bg-slate-800/40">
-                    <td className="py-3 px-3 font-bold text-slate-200">{m.name}</td>
-                    <td className="py-3 px-3 font-mono text-slate-400">{m.email}</td>
-                    <td className="py-3 px-3 font-mono text-indigo-400 font-semibold">{m.role}</td>
-                    <td className="py-3 px-3 font-mono text-slate-400">{m.joinedAt}</td>
+                  <tr key={m.id} className="hover:bg-[#F0EBE1]/50 transition-colors">
+                    <td className="py-3 px-3 font-bold text-[#2C221E]">{m.name}</td>
+                    <td className="py-3 px-3 text-[#665C54]">{m.email}</td>
+                    <td className="py-3 px-3 text-[#C69432] font-semibold">{m.role}</td>
+                    <td className="py-3 px-3 text-[#665C54]">{m.joinedAt}</td>
                     <td className="py-3 px-3 text-right">
-                      <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-mono text-[10px] border border-emerald-500/20">
+                      <span className="px-2 py-0.5 rounded-full bg-[#0F8B5F]/15 text-[#0F8B5F] text-[10px] border border-[#0F8B5F]/30 font-bold uppercase">
                         {m.status}
                       </span>
                     </td>
@@ -138,8 +139,8 @@ export const OrganizationDetailsScreen: React.FC = () => {
         {/* Posted Enterprise Zigs */}
         {activeTab === 'zigs' && (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-950 text-slate-400 font-mono border-b border-slate-800 uppercase">
+            <table className="w-full text-left text-xs font-numeric">
+              <thead className="bg-[#F8F5EE] text-[#C69432] uppercase border-b border-[#EBE4D8]">
                 <tr>
                   <th className="py-2.5 px-3">Zig Title</th>
                   <th className="py-2.5 px-3">Category</th>
@@ -148,15 +149,15 @@ export const OrganizationDetailsScreen: React.FC = () => {
                   <th className="py-2.5 px-3 text-right">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/80">
+              <tbody className="divide-y divide-[#EBE4D8]">
                 {postedZigs.map((z) => (
-                  <tr key={z.id} className="hover:bg-slate-800/40">
-                    <td className="py-3 px-3 font-bold text-slate-200">{z.title}</td>
-                    <td className="py-3 px-3 text-slate-400">{z.category}</td>
-                    <td className="py-3 px-3 font-mono text-indigo-300">{z.workerCount} Workers</td>
-                    <td className="py-3 px-3 font-mono text-emerald-400">{formatCurrency(z.budgetPerWorker)}</td>
+                  <tr key={z.id} className="hover:bg-[#F0EBE1]/50 transition-colors">
+                    <td className="py-3 px-3 font-bold text-[#2C221E]">{z.title}</td>
+                    <td className="py-3 px-3 text-[#665C54]">{z.category}</td>
+                    <td className="py-3 px-3 text-[#C69432] font-semibold">{z.workerCount} Workers</td>
+                    <td className="py-3 px-3 text-[#0F8B5F] font-bold">{formatCurrency(z.budgetPerWorker)}</td>
                     <td className="py-3 px-3 text-right">
-                      <span className="px-2 py-0.5 rounded bg-sky-500/10 text-sky-400 font-mono text-[10px] border border-sky-500/20">
+                      <span className="px-2 py-0.5 rounded-full bg-[#2563EB]/15 text-[#2563EB] text-[10px] border border-[#2563EB]/30 font-bold uppercase">
                         {z.status}
                       </span>
                     </td>
@@ -170,8 +171,8 @@ export const OrganizationDetailsScreen: React.FC = () => {
         {/* Invoices */}
         {activeTab === 'invoices' && (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-950 text-slate-400 font-mono border-b border-slate-800 uppercase">
+            <table className="w-full text-left text-xs font-numeric">
+              <thead className="bg-[#F8F5EE] text-[#C69432] uppercase border-b border-[#EBE4D8]">
                 <tr>
                   <th className="py-2.5 px-3">Invoice Number</th>
                   <th className="py-2.5 px-3">Billing Date</th>
@@ -180,15 +181,15 @@ export const OrganizationDetailsScreen: React.FC = () => {
                   <th className="py-2.5 px-3 text-right">Payment Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/80">
+              <tbody className="divide-y divide-[#EBE4D8]">
                 {invoices.map((inv) => (
-                  <tr key={inv.id} className="hover:bg-slate-800/40">
-                    <td className="py-3 px-3 font-mono font-bold text-indigo-400">{inv.invoiceNumber}</td>
-                    <td className="py-3 px-3 font-mono text-slate-400">{inv.date}</td>
-                    <td className="py-3 px-3 font-mono text-slate-400">{inv.dueDate}</td>
-                    <td className="py-3 px-3 font-mono font-bold text-emerald-400">{formatCurrency(inv.amount)}</td>
+                  <tr key={inv.id} className="hover:bg-[#F0EBE1]/50 transition-colors">
+                    <td className="py-3 px-3 font-bold text-[#C69432]">{inv.invoiceNumber}</td>
+                    <td className="py-3 px-3 text-[#665C54]">{inv.date}</td>
+                    <td className="py-3 px-3 text-[#665C54]">{inv.dueDate}</td>
+                    <td className="py-3 px-3 font-bold text-[#0F8B5F]">{formatCurrency(inv.amount)}</td>
                     <td className="py-3 px-3 text-right">
-                      <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-mono text-[10px] border border-emerald-500/20">
+                      <span className="px-2 py-0.5 rounded-full bg-[#0F8B5F]/15 text-[#0F8B5F] text-[10px] border border-[#0F8B5F]/30 font-bold uppercase">
                         {inv.status}
                       </span>
                     </td>
