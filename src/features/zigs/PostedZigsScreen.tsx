@@ -235,7 +235,7 @@ export const PostedZigsScreen: React.FC = () => {
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 text-xs font-numeric">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-numeric">
               <div className="p-3 rounded-xl bg-[#F8F5EE] border border-[#EBE4D8]">
                 <span className="text-[10px] text-[#C69432] font-bold uppercase block">Employer Creator</span>
                 <span className="font-bold text-[#2C221E] block mt-0.5">{selectedZig.createdByName}</span>
@@ -264,7 +264,7 @@ export const PostedZigsScreen: React.FC = () => {
                 <span>Attendance & Work Completion Photos</span>
               </span>
 
-              <div className="grid grid-cols-2 gap-3 font-numeric">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 font-numeric">
                 <div>
                   <span className="text-[10px] text-[#665C54] block mb-1">Check-in Photo:</span>
                   {selectedZig.checkInPhoto ? (

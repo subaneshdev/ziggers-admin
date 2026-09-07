@@ -81,8 +81,8 @@ export const FraudAlertsScreen: React.FC = () => {
       </div>
 
       {/* Severity Filter Buttons */}
-      <div className="flex items-center space-x-2 p-3 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
-        <span className="text-[11px] text-[#665C54] font-semibold uppercase ml-1">Severity:</span>
+      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 p-3 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
+        <span className="text-[11px] text-[#665C54] font-semibold uppercase ml-1 mr-1">Severity:</span>
         {(['ALL', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as const).map((sev) => (
           <button
             key={sev}
@@ -150,7 +150,7 @@ export const FraudAlertsScreen: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="flex items-center space-x-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={() => setSelectedAlert({ alert, action: 'FLAG' })}
                     className="px-3 py-1.5 rounded-lg bg-[#F0EBE1] hover:bg-[#EBE4D8] text-[#2C221E] border border-[#EBE4D8] text-xs font-semibold transition-colors flex items-center space-x-1 min-h-[32px]"

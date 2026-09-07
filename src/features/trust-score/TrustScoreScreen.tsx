@@ -89,7 +89,7 @@ export const TrustScoreScreen: React.FC = () => {
             <label className="block text-[11px] font-semibold text-[#665C54] mb-2 uppercase">
               Operation Type
             </label>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <button
                 type="button"
                 onClick={() => setActionType('PENALTY')}

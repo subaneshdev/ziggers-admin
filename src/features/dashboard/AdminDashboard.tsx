@@ -91,7 +91,7 @@ export const AdminDashboard: React.FC = () => {
   return (
     <div className="space-y-6 font-poppins text-xs text-[#2C221E]">
       {/* 8 Analytics Module Sub-Tabs Navigation */}
-      <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 scrollbar-none border-b border-[#EBE4D8]">
+      <div className="flex items-center space-x-1.5 overflow-x-auto pb-2 scrollbar-none border-b border-[#EBE4D8] -mx-3 px-3 sm:mx-0 sm:px-0">
         {TABS.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.key;
@@ -99,7 +99,7 @@ export const AdminDashboard: React.FC = () => {
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors border ${
+              className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors border shrink-0 ${
                 isActive
                   ? 'bg-[#2C221E] text-white border-[#2C221E] shadow-sm font-bold'
                   : 'bg-[#FFFFFF] text-[#5C524B] hover:text-[#2C221E] border-[#EBE4D8] hover:bg-[#F0EBE1]'

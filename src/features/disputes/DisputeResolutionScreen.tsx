@@ -87,8 +87,8 @@ export const DisputeResolutionScreen: React.FC = () => {
       </div>
 
       {/* Filter Bar */}
-      <div className="flex items-center space-x-2 p-3 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
-        <span className="text-[11px] text-[#665C54] font-semibold uppercase ml-1">Case Status:</span>
+      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 p-3 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
+        <span className="text-[11px] text-[#665C54] font-semibold uppercase ml-1 mr-1">Case Status:</span>
         {(['ALL', 'INVESTIGATING', 'RESOLVED_WORKER', 'RESOLVED_EMPLOYER', 'PARTIAL_SPLIT'] as const).map((st) => (
           <button
             key={st}
@@ -99,7 +99,7 @@ export const DisputeResolutionScreen: React.FC = () => {
                 : 'bg-[#F0EBE1] text-[#5C524B] hover:text-[#2C221E] border border-[#EBE4D8]'
             }`}
           >
-            {st}
+            {st.replace(/_/g, ' ')}
           </button>
         ))}
       </div>

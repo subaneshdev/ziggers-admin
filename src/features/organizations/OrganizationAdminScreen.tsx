@@ -84,7 +84,7 @@ export const OrganizationAdminScreen: React.FC = () => {
   return (
     <div className="space-y-5 font-poppins text-xs text-[#2C221E]">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-bold text-[#2C221E] tracking-tight">
             B2B Enterprise Client Accounts
@@ -96,7 +96,7 @@ export const OrganizationAdminScreen: React.FC = () => {
 
         <button
           onClick={() => setIsAddModalOpen(true)}
-          className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-[#2C221E] hover:bg-[#3D2F2A] text-white text-xs font-bold transition-colors border border-[#EBE4D8] min-h-[38px] shadow-sm"
+          className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-[#2C221E] hover:bg-[#3D2F2A] text-white text-xs font-bold transition-colors border border-[#EBE4D8] min-h-[38px] shadow-sm self-start sm:self-auto"
         >
           <Plus className="w-3.5 h-3.5 text-[#C69432]" />
           <span>Onboard Corporate Org</span>
@@ -222,7 +222,7 @@ export const OrganizationAdminScreen: React.FC = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div>
                   <label className="block text-[11px] font-semibold text-[#665C54] mb-1 uppercase">Billing Email</label>
                   <input
@@ -248,7 +248,7 @@ export const OrganizationAdminScreen: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div>
                   <label className="block text-[11px] font-semibold text-[#665C54] mb-1 uppercase">GSTIN Tax ID</label>
                   <input

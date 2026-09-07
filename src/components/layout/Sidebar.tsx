@@ -12,13 +12,29 @@ import {
   MessageSquare,
   ChevronLeft, 
   ChevronRight, 
-  LogOut
+  LogOut,
+  X
 } from 'lucide-react';
 import { authClient } from '../../lib/authClient';
 import { useToast } from '../ui/Toast';
 
-export const Sidebar: React.FC = () => {
-  const [collapsed, setCollapsed] = useState(false);
+export interface SidebarProps {
+  isMobileOpen?: boolean;
+  onCloseMobile?: () => void;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
+}
+
+export const Sidebar: React.FC<SidebarProps> = ({
+  isMobileOpen = false,
+  onCloseMobile,
+  collapsed: controlledCollapsed,
+  onToggleCollapse,
+}) => {
+  const [internalCollapsed, setInternalCollapsed] = useState(false);
+  const collapsed = controlledCollapsed !== undefined ? controlledCollapsed : internalCollapsed;
+  const toggleCollapse = onToggleCollapse || (() => setInternalCollapsed(!internalCollapsed));
+
   const location = useLocation();
   const navigate = useNavigate();
   const { info } = useToast();
@@ -97,88 +113,112 @@ export const Sidebar: React.FC = () => {
   ];
 
   return (
-    <aside
-      className={`fixed top-0 left-0 bottom-0 z-40 bg-[#FFFFFF] border-r border-[#EBE4D8] flex flex-col transition-all duration-300 ease-in-out font-poppins shadow-[2px_0_15px_rgba(44,34,30,0.02)] ${
-        collapsed ? 'w-20' : 'w-72'
-      }`}
-    >
-      {/* Brand Header (Official Ziggers Logo Style) */}
-      <div className="h-16 px-4 flex items-center justify-between border-b border-[#EBE4D8]">
-        <div className="flex items-center space-x-3 overflow-hidden">
-          <div className="w-9 h-9 rounded-xl bg-[#2C221E] flex items-center justify-center shadow-md shrink-0">
-            <span className="text-white font-extrabold text-lg tracking-tighter">Z</span>
+    <>
+      {/* Mobile Drawer Backdrop Overlay */}
+      {isMobileOpen && (
+        <div
+          onClick={onCloseMobile}
+          className="fixed inset-0 bg-[#2C221E]/60 backdrop-blur-xs z-40 lg:hidden transition-opacity duration-300"
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        className={`fixed top-0 left-0 bottom-0 z-50 bg-[#FFFFFF] border-r border-[#EBE4D8] flex flex-col transition-all duration-300 ease-in-out font-poppins shadow-[2px_0_20px_rgba(44,34,30,0.06)] ${
+          isMobileOpen ? 'translate-x-0 w-72' : '-translate-x-full lg:translate-x-0'
+        } ${collapsed ? 'lg:w-20' : 'lg:w-72'}`}
+      >
+        {/* Brand Header (Official Ziggers Logo Style) */}
+        <div className="h-16 px-4 flex items-center justify-between border-b border-[#EBE4D8]">
+          <div className="flex items-center space-x-3 overflow-hidden">
+            <div className="w-9 h-9 rounded-xl bg-[#2C221E] flex items-center justify-center shadow-md shrink-0">
+              <span className="text-white font-extrabold text-lg tracking-tighter">Z</span>
+            </div>
+            {(!collapsed || isMobileOpen) && (
+              <div className="flex flex-col">
+                <span className="text-base font-black tracking-tight text-[#2C221E]">
+                  Ziggers
+                </span>
+                <span className="text-[10px] uppercase font-numeric font-bold tracking-widest text-[#C69432]">
+                  Admin Console
+                </span>
+              </div>
+            )}
           </div>
-          {!collapsed && (
-            <div className="flex flex-col">
-              <span className="text-base font-black tracking-tight text-[#2C221E]">
-                Ziggers
-              </span>
-              <span className="text-[10px] uppercase font-numeric font-bold tracking-widest text-[#C69432]">
-                Admin Console
-              </span>
+
+          {/* Desktop Collapse Button */}
+          <button
+            onClick={toggleCollapse}
+            className="hidden lg:block p-1.5 rounded-lg text-[#2C221E] hover:bg-[#F0EBE1] transition-colors"
+            title={collapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
+          >
+            {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+          </button>
+
+          {/* Mobile Close Button */}
+          <button
+            onClick={onCloseMobile}
+            className="lg:hidden p-1.5 rounded-lg text-[#665C54] hover:text-[#2C221E] hover:bg-[#F0EBE1] transition-colors"
+            title="Close Navigation Drawer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Navigation List */}
+        <nav className="flex-1 px-3 py-4 space-y-1.5 overflow-y-auto">
+          {(!collapsed || isMobileOpen) && (
+            <div className="px-3 pb-2 text-[11px] font-bold uppercase tracking-wider text-[#8C827A]">
+              Operations Desk
             </div>
           )}
-        </div>
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="p-1.5 rounded-lg text-[#2C221E] hover:bg-[#F0EBE1] transition-colors"
-          title={collapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
-        >
-          {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-        </button>
-      </div>
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = location.pathname.startsWith(item.path);
 
-      {/* Navigation List */}
-      <nav className="flex-1 px-3 py-4 space-y-1.5 overflow-y-auto">
-        {!collapsed && (
-          <div className="px-3 pb-2 text-[11px] font-bold uppercase tracking-wider text-[#8C827A]">
-            Operations Desk
-          </div>
-        )}
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = location.pathname.startsWith(item.path);
-
-          return (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              className={({ isActive }) =>
-                `flex items-center px-3 py-3 rounded-xl text-xs transition-all group relative min-h-[44px] ${
-                  isActive
-                    ? 'bg-[#2C221E] text-white font-bold shadow-md'
-                    : 'text-[#5C524B] hover:text-[#2C221E] hover:bg-[#F0EBE1]'
-                }`
-              }
-            >
-              <Icon
-                className={`w-4 h-4 shrink-0 transition-colors ${
-                  isActive ? 'text-[#C69432]' : 'text-[#8C827A] group-hover:text-[#2C221E]'
-                }`}
-              />
-              {!collapsed && (
-                <div className="ml-3 flex-1 flex items-center justify-between overflow-hidden">
-                  <span className="truncate">{item.name}</span>
-                  {item.badge && (
-                    <span
-                      className={`text-[10px] px-2 py-0.5 rounded-md font-numeric border ${item.badgeColor} ml-2 shrink-0 ${
-                        isActive ? 'bg-white/10 text-[#C69432] border-white/20' : ''
-                      }`}
-                    >
-                      {item.badge}
-                    </span>
-                  )}
-                </div>
-              )}
-              {collapsed && (
-                <div className="absolute left-full ml-3 px-3 py-1.5 bg-[#2C221E] text-white text-xs font-semibold rounded-lg shadow-xl whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
-                  {item.name}
-                </div>
-              )}
-            </NavLink>
-          );
-        })}
-      </nav>
+            return (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                onClick={() => {
+                  if (onCloseMobile) onCloseMobile();
+                }}
+                className={({ isActive }) =>
+                  `flex items-center px-3 py-3 rounded-xl text-xs transition-all group relative min-h-[44px] ${
+                    isActive
+                      ? 'bg-[#2C221E] text-white font-bold shadow-md'
+                      : 'text-[#5C524B] hover:text-[#2C221E] hover:bg-[#F0EBE1]'
+                  }`
+                }
+              >
+                <Icon
+                  className={`w-4 h-4 shrink-0 transition-colors ${
+                    isActive ? 'text-[#C69432]' : 'text-[#8C827A] group-hover:text-[#2C221E]'
+                  }`}
+                />
+                {(!collapsed || isMobileOpen) && (
+                  <div className="ml-3 flex-1 flex items-center justify-between overflow-hidden">
+                    <span className="truncate">{item.name}</span>
+                    {item.badge && (
+                      <span
+                        className={`text-[10px] px-2 py-0.5 rounded-md font-numeric border ${item.badgeColor} ml-2 shrink-0 ${
+                          isActive ? 'bg-white/10 text-[#C69432] border-white/20' : ''
+                        }`}
+                      >
+                        {item.badge}
+                      </span>
+                    )}
+                  </div>
+                )}
+                {collapsed && !isMobileOpen && (
+                  <div className="absolute left-full ml-3 px-3 py-1.5 bg-[#2C221E] text-white text-xs font-semibold rounded-lg shadow-xl whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+                    {item.name}
+                  </div>
+                )}
+              </NavLink>
+            );
+          })}
+        </nav>
 
       {/* Backend & Environment Health Badge */}
       {!collapsed && (
@@ -221,5 +261,7 @@ export const Sidebar: React.FC = () => {
         </button>
       </div>
     </aside>
+    </>
   );
 };
+

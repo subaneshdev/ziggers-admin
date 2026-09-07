@@ -12,14 +12,20 @@ import {
   Phone, 
   MapPin, 
   User, 
-  X
+  X,
+  Menu
 } from 'lucide-react';
 import { adminApi } from '../../lib/adminApi';
 import { PostedZigRecord } from '../../types/admin';
 import { formatCurrency, formatDate } from '../../lib/utils';
 import { useToast } from '../ui/Toast';
 
-export const Header: React.FC<{ onRefreshData?: () => void }> = ({ onRefreshData }) => {
+interface HeaderProps {
+  onRefreshData?: () => void;
+  onToggleMobileSidebar?: () => void;
+}
+
+export const Header: React.FC<HeaderProps> = ({ onRefreshData, onToggleMobileSidebar }) => {
   const location = useLocation();
   const queryClient = useQueryClient();
   const { success, error } = useToast();
@@ -48,18 +54,18 @@ export const Header: React.FC<{ onRefreshData?: () => void }> = ({ onRefreshData
   });
 
   const getPageTitle = (pathname: string) => {
-    if (pathname.includes('/admin/dashboard')) return 'Analytics Dashboard & Ops Overview';
-    if (pathname.includes('/admin/zigs')) return 'Posted Zigs & Gig Operations Directory';
-    if (pathname.includes('/admin/kyc/queue')) return 'KYC Worker & Employer Verification Queue';
-    if (pathname.includes('/admin/kyc/')) return 'KYC Inspector & Document Adjudication';
-    if (pathname.includes('/admin/disputes')) return 'Escrow Dispute Resolution Engine';
-    if (pathname.includes('/admin/fraud-alerts')) return 'Fraud Detection & Risk Monitoring';
-    if (pathname.includes('/admin/trust-score')) return 'Trust Score Manager & Fine Penalties';
-    if (pathname.includes('/admin/organizations/')) return 'B2B Enterprise Organization Details';
-    if (pathname.includes('/admin/organizations')) return 'B2B Accounts & Corporate Clients';
-    if (pathname.includes('/admin/referrals')) return 'Referral Growth & Invite Ledger';
-    if (pathname.includes('/admin/tickets')) return 'Support Tickets & Escalation Desk';
-    return 'Ziggers Operations Console';
+    if (pathname.includes('/admin/dashboard')) return 'Analytics Dashboard';
+    if (pathname.includes('/admin/zigs')) return 'Posted Zigs Directory';
+    if (pathname.includes('/admin/kyc/queue')) return 'KYC Verification Queue';
+    if (pathname.includes('/admin/kyc/')) return 'KYC Adjudication';
+    if (pathname.includes('/admin/disputes')) return 'Escrow Dispute Engine';
+    if (pathname.includes('/admin/fraud-alerts')) return 'Fraud Risk Monitoring';
+    if (pathname.includes('/admin/trust-score')) return 'Trust Score Manager';
+    if (pathname.includes('/admin/organizations/')) return 'Organization Details';
+    if (pathname.includes('/admin/organizations')) return 'B2B Accounts';
+    if (pathname.includes('/admin/referrals')) return 'Referral Growth Ledger';
+    if (pathname.includes('/admin/tickets')) return 'Support Tickets';
+    return 'Ziggers Console';
   };
 
   const handleGlobalRefresh = async () => {
@@ -79,31 +85,43 @@ export const Header: React.FC<{ onRefreshData?: () => void }> = ({ onRefreshData
   const activeZigs = zigs.filter(z => z.status !== 'COMPLETED' && z.status !== 'CANCELLED' && z.status !== 'EXPIRED');
 
   return (
-    <header className="h-16 px-6 bg-[#FFFFFF] border-b border-[#EBE4D8] shadow-[0_2px_15px_rgba(44,34,30,0.03)] flex items-center justify-between sticky top-0 z-30 font-poppins">
-      {/* Page Title & Breadcrumbs */}
-      <div className="flex items-center space-x-3">
-        <div className="p-2 rounded-xl bg-[#F0EBE1] text-[#2C221E] border border-[#EBE4D8]">
-          <Shield className="w-5 h-5 text-[#C69432]" />
-        </div>
-        <div>
-          <h1 className="text-sm font-bold text-[#2C221E] tracking-tight">{getPageTitle(location.pathname)}</h1>
-          <div className="flex items-center space-x-2 text-[11px] text-[#665C54]">
-            <span className="font-medium">Ziggers Ops</span>
-            <span>/</span>
-            <span className="font-numeric font-semibold text-[#C69432]">{location.pathname}</span>
+    <header className="h-16 px-3 sm:px-6 bg-[#FFFFFF] border-b border-[#EBE4D8] shadow-[0_2px_15px_rgba(44,34,30,0.03)] flex items-center justify-between sticky top-0 z-30 font-poppins">
+      {/* Left: Mobile Menu Toggle & Breadcrumbs */}
+      <div className="flex items-center space-x-2 sm:space-x-3 min-w-0">
+        <button
+          onClick={onToggleMobileSidebar}
+          className="lg:hidden p-2 rounded-xl bg-[#F0EBE1] hover:bg-[#EBE4D8] text-[#2C221E] border border-[#EBE4D8] transition-colors focus:outline-none shrink-0"
+          aria-label="Open mobile navigation menu"
+        >
+          <Menu className="w-5 h-5 text-[#2C221E]" />
+        </button>
+
+        <div className="flex items-center space-x-2 sm:space-x-3 min-w-0">
+          <div className="p-1.5 sm:p-2 rounded-xl bg-[#F0EBE1] text-[#2C221E] border border-[#EBE4D8] shrink-0">
+            <Shield className="w-4 h-4 sm:w-5 h-5 text-[#C69432]" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="text-xs sm:text-sm font-bold text-[#2C221E] tracking-tight truncate max-w-[130px] xs:max-w-[180px] sm:max-w-xs md:max-w-md">
+              {getPageTitle(location.pathname)}
+            </h1>
+            <div className="hidden sm:flex items-center space-x-2 text-[11px] text-[#665C54]">
+              <span className="font-medium">Ziggers Ops</span>
+              <span>/</span>
+              <span className="font-numeric font-semibold text-[#C69432] truncate max-w-[180px]">{location.pathname}</span>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Global Actions */}
-      <div className="flex items-center space-x-3 relative">
-        {/* Quick Search */}
-        <div className="relative">
+      <div className="flex items-center space-x-1.5 sm:space-x-3 relative shrink-0">
+        {/* Quick Search - hidden on mobile (< md) */}
+        <div className="relative hidden md:block">
           <Search className="w-4 h-4 text-[#8C827A] absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Search User ID, Zig #, Org, GSTIN..."
-            className="w-64 bg-[#F0EBE1] border border-[#EBE4D8] rounded-xl pl-9 pr-3 py-1.5 text-xs text-[#2C221E] placeholder-[#8C827A] focus:outline-none focus:border-[#C69432] transition-all font-numeric"
+            placeholder="Search User ID, Zig #, Org..."
+            className="w-44 lg:w-64 bg-[#F0EBE1] border border-[#EBE4D8] rounded-xl pl-9 pr-3 py-1.5 text-xs text-[#2C221E] placeholder-[#8C827A] focus:outline-none focus:border-[#C69432] transition-all font-numeric"
           />
         </div>
 
@@ -111,15 +129,16 @@ export const Header: React.FC<{ onRefreshData?: () => void }> = ({ onRefreshData
         <button
           onClick={handleGlobalRefresh}
           disabled={isRefreshing}
-          className="flex items-center space-x-2 px-3.5 py-1.5 rounded-xl bg-[#2C221E] hover:bg-[#3D2F2A] text-white text-xs font-bold transition-all disabled:opacity-50 min-h-[38px] shadow-sm"
+          className="flex items-center space-x-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-xl bg-[#2C221E] hover:bg-[#3D2F2A] text-white text-xs font-bold transition-all disabled:opacity-50 min-h-[38px] shadow-sm"
           title="Trigger manual analytics snapshot computation"
         >
           <RefreshCw className={`w-3.5 h-3.5 text-[#C69432] ${isRefreshing ? 'animate-spin' : ''}`} />
-          <span>{isRefreshing ? 'Computing Snapshot...' : 'Refresh Snapshots'}</span>
+          <span className="hidden sm:inline">{isRefreshing ? 'Computing...' : 'Refresh Snapshots'}</span>
+          <span className="sm:hidden">{isRefreshing ? '...' : 'Refresh'}</span>
         </button>
 
-        {/* Live System Time indicator */}
-        <div className="px-3 py-1.5 rounded-xl bg-[#F0EBE1] border border-[#EBE4D8] flex items-center space-x-2 text-[11px] font-numeric text-[#2C221E]">
+        {/* Live System Time indicator - hidden on < xl */}
+        <div className="hidden xl:flex px-3 py-1.5 rounded-xl bg-[#F0EBE1] border border-[#EBE4D8] items-center space-x-2 text-[11px] font-numeric text-[#2C221E]">
           <Clock className="w-3.5 h-3.5 text-[#0F8B5F]" />
           <span className="font-bold">UTC {new Date().toISOString().substring(11, 19)}</span>
         </div>
@@ -134,7 +153,7 @@ export const Header: React.FC<{ onRefreshData?: () => void }> = ({ onRefreshData
           }`}
           title="Live Zigs & Worker Activity Notifications"
         >
-          <Bell className={`w-4 h-4 ${isNotificationsOpen ? 'text-[#C69432]' : 'text-[#C69432]'}`} />
+          <Bell className="w-4 h-4 text-[#C69432]" />
           {activeZigs.length > 0 && (
             <span className="absolute -top-1 -right-1 px-1.5 py-0.2 text-[9px] bg-[#DC2626] text-white font-bold rounded-full font-numeric border border-white">
               {activeZigs.length}
@@ -142,9 +161,9 @@ export const Header: React.FC<{ onRefreshData?: () => void }> = ({ onRefreshData
           )}
         </button>
 
-        {/* Real-time Notifications & Live Zigs Drawer Popover */}
+        {/* Real-time Notifications & Live Zigs Drawer Popover - Viewport safe */}
         {isNotificationsOpen && (
-          <div className="absolute right-0 top-14 w-96 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-2xl p-4 space-y-3 z-50 text-xs font-poppins">
+          <div className="fixed sm:absolute right-2 sm:right-0 top-16 sm:top-14 w-[calc(100vw-1rem)] sm:w-96 max-w-sm rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-2xl p-4 space-y-3 z-50 text-xs font-poppins">
             <div className="flex items-center justify-between border-b border-[#EBE4D8] pb-2.5">
               <div className="flex items-center space-x-2">
                 <Briefcase className="w-4 h-4 text-[#C69432]" />
