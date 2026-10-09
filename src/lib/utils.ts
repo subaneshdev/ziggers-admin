@@ -26,19 +26,83 @@ export function formatCompactCurrency(amount: number): string {
   return `₹${amount}`;
 }
 
-export function formatDate(dateString: string): string {
+export function formatDate(dateString?: string | null): string {
+  if (!dateString) return 'N/A';
   try {
-    return new Date(dateString).toLocaleDateString('en-IN', {
-      day: 'numeric',
+    const d = new Date(dateString);
+    if (isNaN(d.getTime())) return String(dateString);
+    const formatted = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
       month: 'short',
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
-    });
+      hour12: true,
+    }).format(d);
+    return `${formatted} IST`;
   } catch {
-    return dateString;
+    return String(dateString);
   }
 }
+
+export function formatISTTimestamp(dateString?: string | null): string {
+  if (!dateString) return 'N/A';
+  try {
+    const d = new Date(dateString);
+    if (isNaN(d.getTime())) return String(dateString);
+    const formatted = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+    }).format(d);
+    return `${formatted} IST`;
+  } catch {
+    return String(dateString);
+  }
+}
+
+export function getISTClockString(date: Date = new Date()): string {
+  try {
+    const timeStr = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+    }).format(date);
+    return `IST ${timeStr.toUpperCase()}`;
+  } catch {
+    return 'IST';
+  }
+}
+
+export function getISTDateKey(dateInput: string | number | Date): string {
+  try {
+    const d = new Date(dateInput);
+    if (isNaN(d.getTime())) return '';
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(d);
+  } catch {
+    return '';
+  }
+}
+
+export function getISTStartOfTodayMs(now: Date = new Date()): number {
+  const istDateStr = getISTDateKey(now); // YYYY-MM-DD in Asia/Kolkata
+  if (!istDateStr) return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  return new Date(`${istDateStr}T00:00:00.000+05:30`).getTime();
+}
+
 
 // ==========================================
 // 1. Pricing, Fees & Escrow Funding Logics

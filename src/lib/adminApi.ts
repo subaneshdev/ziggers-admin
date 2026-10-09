@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient';
+import { getISTDateKey, getISTStartOfTodayMs } from './utils';
 import { 
   UserProfile, 
   KycDetail, 
@@ -18,6 +19,187 @@ import {
   SupportTicketRecord,
   PostedZigRecord
 } from '../types/admin';
+
+// ============================================================================
+// Paginated Full-Table Retrieval & Unified Normalization Helpers
+// Prevents Supabase PostgREST 1,000-row truncation & heap-order flickering
+// ============================================================================
+
+let cachedProfilesData: { rows: any[]; fetchedAt: number; isoTimestamp: string } | null = null;
+let inFlightProfilesPromise: Promise<{ rows: any[]; fetchedAt: number; isoTimestamp: string }> | null = null;
+const PROFILES_CACHE_TTL_MS = 10000; // 10 seconds deduplication window
+
+export function invalidateProfilesCache() {
+  cachedProfilesData = null;
+  inFlightProfilesPromise = null;
+}
+
+async function fetchAllProfilesRows(forceRefresh = false): Promise<{ rows: any[]; fetchedAt: number; isoTimestamp: string }> {
+  const now = Date.now();
+  if (!forceRefresh && cachedProfilesData && now - cachedProfilesData.fetchedAt < PROFILES_CACHE_TTL_MS) {
+    return cachedProfilesData;
+  }
+  if (!forceRefresh && inFlightProfilesPromise) {
+    return inFlightProfilesPromise;
+  }
+
+  inFlightProfilesPromise = (async () => {
+    try {
+      const PAGE_SIZE = 1000;
+      const { data: firstPage, count, error } = await supabase
+        .from('profiles')
+        .select('*', { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: true })
+        .range(0, PAGE_SIZE - 1);
+
+      if (error) {
+        console.error('Supabase fetchAllProfilesRows error:', error);
+        throw new Error(`Failed to fetch profiles from Supabase: ${error.message}`);
+      }
+
+      const allRows: any[] = [...(firstPage || [])];
+      const totalCount = count ?? allRows.length;
+
+      if (totalCount > PAGE_SIZE && firstPage && firstPage.length === PAGE_SIZE) {
+        const remainingPagePromises: Promise<any[]>[] = [];
+        for (let from = PAGE_SIZE; from < totalCount; from += PAGE_SIZE) {
+          remainingPagePromises.push(
+            (async () => {
+              const { data } = await supabase
+                .from('profiles')
+                .select('*')
+                .order('created_at', { ascending: false })
+                .order('id', { ascending: true })
+                .range(from, from + PAGE_SIZE - 1);
+              return data || [];
+            })()
+          );
+        }
+        const remainingPages = await Promise.all(remainingPagePromises);
+        for (const page of remainingPages) {
+          allRows.push(...page);
+        }
+      }
+
+      // Deduplicate by id in case a new row shifted page boundaries during parallel fetch
+      const seenIds = new Set<string>();
+      const uniqueRows: any[] = [];
+      for (const row of allRows) {
+        if (row && row.id && !seenIds.has(row.id)) {
+          seenIds.add(row.id);
+          uniqueRows.push(row);
+        }
+      }
+
+      const result = {
+        rows: uniqueRows,
+        fetchedAt: Date.now(),
+        isoTimestamp: new Date().toISOString(),
+      };
+      cachedProfilesData = result;
+      return result;
+    } finally {
+      inFlightProfilesPromise = null;
+    }
+  })();
+
+  return inFlightProfilesPromise;
+}
+
+function normalizeKycStatus(p: any): KycStatus {
+  const k = String(p?.kyc_status || '').toLowerCase().trim();
+  const wk = String(p?.worker_kyc_status || '').toLowerCase().trim();
+  const ek = String(p?.employer_kyc_status || '').toLowerCase().trim();
+
+  if (k === 'pending' || wk === 'pending' || ek === 'pending') return 'PENDING';
+  if (k === 'approved' || wk === 'approved' || ek === 'approved') return 'APPROVED';
+  if (k === 'rejected' || wk === 'rejected' || ek === 'rejected') return 'REJECTED';
+  return 'NOT_STARTED';
+}
+
+function normalizeProfileRow(p: any): UserProfile {
+  const fullName = String(p?.full_name || '').trim();
+  const workerName = String(p?.worker_name || '').trim();
+  const employerName = String(p?.employer_name || '').trim();
+  const businessName = String(p?.business_name || '').trim();
+  const mobile = String(p?.mobile || '').trim();
+  const email = String(p?.email || '').trim();
+
+  const displayName =
+    fullName ||
+    workerName ||
+    employerName ||
+    businessName ||
+    (email ? email.split('@')[0] : '') ||
+    (mobile ? `User (${mobile})` : `User ${String(p?.id || '').slice(0, 8)}`);
+
+  const hasWorker = Boolean(workerName);
+  const hasEmployer = Boolean(employerName || businessName);
+  const hasBothRoles = hasWorker && hasEmployer;
+  const roleType: RoleType = hasEmployer && !hasWorker ? 'employer' : 'worker';
+
+  const cityParts = [p?.city, p?.state].map((s) => String(s || '').trim()).filter(Boolean);
+  const locationDisplay = cityParts.length > 0 ? cityParts.join(', ') : (String(p?.address || p?.business_address || '').trim() || 'Not Specified');
+
+  return {
+    userId: p.id,
+    name: displayName,
+    fullName: fullName || undefined,
+    workerName: workerName || undefined,
+    employerName: employerName || undefined,
+    businessName: businessName || undefined,
+    email: email || 'Not Provided',
+    phone: mobile || 'Not Provided',
+    roleType,
+    hasBothRoles,
+    kycStatus: normalizeKycStatus(p),
+    workerKycStatus: p?.worker_kyc_status || 'not_started',
+    employerKycStatus: p?.employer_kyc_status || 'not_started',
+    idType: p?.id_type || undefined,
+    idCardNumber: p?.id_card_number || undefined,
+    trustScore: typeof p?.trust_score === 'number' ? p.trust_score : 100,
+    walletBalance: Number(p?.wallet_balance) || 0,
+    razorpayAccountId: p?.razorpay_account_id || undefined,
+    upiId: p?.upi_id || undefined,
+    isBankVerified: Boolean(p?.is_bank_verified),
+    accountStatus: p?.account_status || 'active',
+    isSuspended: Boolean(p?.is_suspended),
+    avatarUrl: p?.profile_photo_url || p?.selfie_url || '',
+    city: locationDisplay,
+    state: p?.state || undefined,
+    address: p?.address || p?.business_address || undefined,
+    pincode: p?.pincode || undefined,
+    createdAt: p?.created_at || '',
+    updatedAt: p?.updated_at || p?.created_at || '',
+    organizationId: p?.organization_id || undefined,
+    organizationName: businessName || p?.organization_id || undefined,
+  };
+}
+
+function deriveTaskStatus(t: any): 'COMPLETED' | 'CANCELLED' | 'EXPIRED' | 'IN_PROGRESS' | 'ASSIGNED' | 'POSTED' {
+  const raw = String(t?.status || 'POSTED').toUpperCase().trim();
+  if (raw === 'COMPLETED' || (t?.assigned_to && (t?.completed_at || t?.actual_end_time || t?.check_out_photo))) {
+    return 'COMPLETED';
+  }
+  if (raw === 'CANCELLED' || raw === 'CANCELED') {
+    return 'CANCELLED';
+  }
+  if (raw === 'EXPIRED') {
+    return 'EXPIRED';
+  }
+  const isPastEndTime = t?.end_time ? new Date(t.end_time).getTime() < Date.now() : false;
+  if (isPastEndTime && !t?.assigned_to) {
+    return 'EXPIRED';
+  }
+  if (raw === 'IN_PROGRESS' || t?.started_at || t?.actual_start_time || t?.check_in_photo) {
+    return 'IN_PROGRESS';
+  }
+  if (raw === 'ASSIGNED' || raw === 'APPLIED' || Boolean(t?.assigned_to)) {
+    return 'ASSIGNED';
+  }
+  return 'POSTED';
+}
 
 export interface SupportTicket {
   id: string;
@@ -63,63 +245,24 @@ export interface BroadcastNotificationPayload {
 export const adminApi = {
   // --- 1. KYC Module (100% Real Database Queries from Supabase 'profiles' table) ---
   async fetchPendingKycs(): Promise<UserProfile[]> {
-    const { data: profiles, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('Supabase fetch profiles error:', error);
-      throw new Error(`Failed to fetch profiles from Supabase: ${error.message}`);
-    }
+    const { rows: profiles } = await fetchAllProfilesRows();
 
     if (!profiles || profiles.length === 0) {
       return [];
     }
 
-    const sortedProfiles = [...profiles].sort((a, b) => {
-      const aPending = a.kyc_status === 'pending' || a.worker_kyc_status === 'pending';
-      const bPending = b.kyc_status === 'pending' || b.worker_kyc_status === 'pending';
+    const mapped = profiles.map(normalizeProfileRow);
+
+    // Deterministic sort: Pending reviews at top, then newest registered users first, tie-broken by userId
+    return mapped.sort((a, b) => {
+      const aPending = a.kycStatus === 'PENDING';
+      const bPending = b.kycStatus === 'PENDING';
       if (aPending && !bPending) return -1;
       if (!aPending && bPending) return 1;
-      const aNotStarted = a.kyc_status === 'not_started' || a.worker_kyc_status === 'not_started';
-      const bNotStarted = b.kyc_status === 'not_started' || b.worker_kyc_status === 'not_started';
-      if (aNotStarted && !bNotStarted) return -1;
-      if (!aNotStarted && bNotStarted) return 1;
-      return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
-    });
 
-    return sortedProfiles.map((p) => {
-      const isPending = p.kyc_status === 'pending' || p.worker_kyc_status === 'pending';
-      const isApproved = p.kyc_status === 'approved' || p.worker_kyc_status === 'approved';
-      const isRejected = p.kyc_status === 'rejected' || p.worker_kyc_status === 'rejected';
-
-      let status: KycStatus = 'NOT_STARTED';
-      if (isPending) {
-        status = 'PENDING';
-      } else if (isApproved) {
-        status = 'APPROVED';
-      } else if (isRejected) {
-        status = 'REJECTED';
-      } else {
-        status = 'NOT_STARTED';
-      }
-
-      const name = p.worker_name || p.employer_name || p.full_name || (p.mobile ? `User ${p.mobile}` : `User ${p.id.slice(0, 6)}`);
-      
-      return {
-        userId: p.id,
-        name,
-        email: p.email || (p.mobile ? `${p.mobile}@ziggers.in` : `${p.id.slice(0, 8)}@ziggers.in`),
-        phone: p.mobile || 'N/A',
-        roleType: (p.employer_name && p.employer_name.trim() !== '') ? 'employer' : ((p.worker_name && p.worker_name.trim() !== '') ? 'worker' : 'worker'),
-        kycStatus: status,
-        trustScore: p.trust_score || 0,
-        avatarUrl: p.profile_photo_url || p.selfie_url || '',
-        city: p.city || p.state || 'India',
-        createdAt: p.created_at || new Date().toISOString(),
-        organizationName: p.business_name || p.organization_id || undefined,
-      };
+      const timeDiff = new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+      if (timeDiff !== 0) return timeDiff;
+      return String(a.userId).localeCompare(String(b.userId));
     });
   },
 
@@ -134,44 +277,155 @@ export const adminApi = {
       throw new Error(`Profile ${userId} not found in Supabase: ${error?.message}`);
     }
 
-    const name = p.worker_name || p.full_name || p.employer_name || p.email?.split('@')[0] || (p.mobile ? `User ${p.mobile}` : `User ${userId.slice(0, 6)}`);
-    const isPending = p.kyc_status === 'pending' || p.worker_kyc_status === 'pending';
-    const isApproved = p.kyc_status === 'approved' || p.worker_kyc_status === 'approved';
-    const isRejected = p.kyc_status === 'rejected' || p.worker_kyc_status === 'rejected';
-    const kycStatus: KycStatus = isPending ? 'PENDING' : isApproved ? 'APPROVED' : isRejected ? 'REJECTED' : 'NOT_STARTED';
+    const norm = normalizeProfileRow(p);
+    const kycStatus = norm.kycStatus;
+    const isDiditVerified = p.id_type === 'Didit' || kycStatus === 'APPROVED';
+
+    const locationParts = [p.address, p.city, p.state, p.pincode]
+      .map((v) => String(v || '').trim())
+      .filter(Boolean);
+    const formattedAddress =
+      locationParts.length > 0
+        ? locationParts.join(', ')
+        : String(p.business_address || '').trim() || 'Not Provided';
+
+    const skillsText = Array.isArray(p.skills)
+      ? p.skills.join(', ')
+      : typeof p.skills === 'string'
+      ? p.skills
+      : '';
+
+    const diditStatus: KycDetail['diditStatus'] = isDiditVerified
+      ? 'VERIFIED'
+      : kycStatus === 'PENDING'
+      ? 'PENDING_MANUAL_REVIEW'
+      : kycStatus === 'REJECTED'
+      ? 'FAILED'
+      : 'NOT_STARTED';
+
+    const diditConfidence = isDiditVerified ? 100 : kycStatus === 'PENDING' ? 85 : 0;
+    const diditMatchScore = isDiditVerified ? 100 : kycStatus === 'PENDING' ? 85 : 0;
 
     return {
       userId: p.id,
-      name,
-      email: p.email || `${p.mobile || p.id.slice(0, 8)}@ziggers.in`,
-      phone: p.mobile || 'N/A',
-      roleType: p.employer_name || p.business_name ? 'employer' : 'worker',
+      name: norm.name,
+      fullName: norm.fullName,
+      workerName: norm.workerName,
+      employerName: norm.employerName,
+      businessName: norm.businessName,
+      email: norm.email,
+      phone: norm.phone,
+      roleType: norm.roleType,
+      hasBothRoles: norm.hasBothRoles,
       kycStatus,
-      submittedAt: p.created_at || new Date().toISOString(),
-      aadhaarNumber: p.id_card_number || 'DIDIT_VERIFIED',
+      workerKycStatus: p.worker_kyc_status || 'not_started',
+      employerKycStatus: p.employer_kyc_status || 'not_started',
+      accountStatus: p.account_status || 'active',
+      isSuspended: Boolean(p.is_suspended),
+      submittedAt: p.created_at || '',
+      updatedAt: p.updated_at || p.created_at || '',
+      dob: p.dob || undefined,
+      gender: p.gender || undefined,
+      address: formattedAddress,
+      city: p.city || undefined,
+      state: p.state || undefined,
+      pincode: p.pincode || undefined,
+      occupation: p.occupation || p.nature_of_work || undefined,
+      headline: p.headline || undefined,
+      bio: p.bio || p.about || undefined,
+      skills: skillsText || undefined,
+      idType: p.id_type || (isDiditVerified ? 'Didit' : 'Not Submitted'),
+      aadhaarNumber: p.id_card_number || 'Not Submitted',
       aadhaarFrontUrl: p.id_card_front_url || p.profile_photo_url || '',
       aadhaarBackUrl: p.id_card_back_url || p.cover_photo_url || '',
-      panNumber: p.gst_number || p.id_card_number || 'DIDIT_VERIFIED',
+      panNumber: p.gst_number || p.id_card_number || 'Not Submitted',
       panPhotoUrl: p.id_card_front_url || p.cover_photo_url || p.profile_photo_url || '',
       selfieUrl: p.selfie_url || p.profile_photo_url || '',
-      bankName: p.bank_account_name || (p.razorpay_account_id ? `RazorpayX (${p.razorpay_account_id})` : 'Not Linked'),
-      accountNumber: p.bank_account_number || (p.upi_id ? `UPI: ${p.upi_id}` : (p.razorpay_account_id ? p.razorpay_account_id : 'N/A')),
-      ifscCode: p.bank_ifsc || (p.razorpay_account_id ? 'RAZR0000001' : 'N/A'),
-      diditStatus: p.id_type === 'Didit' || p.kyc_status === 'approved' ? 'VERIFIED' : 'PENDING_MANUAL_REVIEW',
-      diditConfidence: p.kyc_status === 'approved' ? 98.4 : 85.0,
-      diditFaceMatch: true,
-      diditLivenessPassed: true,
-      diditMatchScore: p.kyc_status === 'approved' ? 99.1 : 86.5,
-      notes: p.rejection_reason || (p.id_type === 'Didit' ? `Verified via Didit AI Protocol. Linked Razorpay Fund Account: ${p.razorpay_account_id || 'N/A'}` : 'Verified User Account.'),
+      bankName:
+        p.bank_account_name ||
+        p.bank_name_by_provider ||
+        (p.razorpay_account_id ? `RazorpayX (${p.razorpay_account_id})` : 'Not Linked'),
+      accountNumber:
+        p.bank_account_number ||
+        (p.upi_id ? `UPI: ${p.upi_id}` : p.razorpay_account_id ? p.razorpay_account_id : 'Not Linked'),
+      ifscCode: p.bank_ifsc || (p.is_bank_verified ? 'Verified' : 'Not Linked'),
+      upiId: p.upi_id || undefined,
+      razorpayAccountId: p.razorpay_account_id || undefined,
+      isBankVerified: Boolean(p.is_bank_verified),
+      walletBalance: Number(p.wallet_balance) || 0,
+      amountInEscrow: Number(p.amount_in_escrow) || 0,
+      trustScore: typeof p.trust_score === 'number' ? p.trust_score : 100,
+      completedOrders: Number(p.completed_orders) || 0,
+      activeOrders: Number(p.active_orders) || 0,
+      postedZigs: Number(p.posted_zigs || p.posted_gigs) || 0,
+      referralCode: p.referral_code || undefined,
+      workerReferralCode: p.worker_referral_code || undefined,
+      employerReferralCode: p.employer_referral_code || undefined,
+      diditStatus,
+      diditConfidence,
+      diditFaceMatch: isDiditVerified,
+      diditLivenessPassed: isDiditVerified,
+      diditMatchScore,
+      notes:
+        p.rejection_reason ||
+        (isDiditVerified
+          ? `Identity verified via ${p.id_type || 'Didit'} (${p.id_card_number || 'APPROVED'}). RazorpayX Account: ${p.razorpay_account_id || 'Not Linked'}.`
+          : `KYC Status: ${kycStatus === 'NOT_STARTED' ? 'KYC Not Started by User' : kycStatus}. RazorpayX Account: ${p.razorpay_account_id || 'Not Linked'}.`),
       fieldComparison: [
-        { field: 'Full Legal / Business Name', submittedValue: name, governmentDbValue: p.business_name || p.full_name || name, isMatching: true },
-        { field: 'Mobile Phone Number', submittedValue: p.mobile || 'N/A', governmentDbValue: p.mobile || 'N/A', isMatching: true },
-        { field: 'Email Address', submittedValue: p.email || 'N/A', governmentDbValue: p.email || 'N/A', isMatching: true },
-        { field: 'Verification Protocol', submittedValue: p.id_type || 'Didit', governmentDbValue: 'Didit AI Engine', isMatching: true },
-        { field: 'ID Card / Reference Number', submittedValue: p.id_card_number || 'DIDIT_VERIFIED', governmentDbValue: p.id_card_number || 'DIDIT_VERIFIED', isMatching: true },
-        { field: 'Location & Address', submittedValue: `${p.address || ''}, ${p.city || ''}, ${p.state || ''} ${p.pincode || ''}`, governmentDbValue: `${p.address || ''}, ${p.city || ''}, ${p.state || ''} ${p.pincode || ''}`, isMatching: true },
-        { field: 'RazorpayX Fund Account', submittedValue: p.razorpay_account_id || 'Not Linked', governmentDbValue: p.razorpay_account_id || 'Not Linked', isMatching: !!p.razorpay_account_id },
-      ]
+        {
+          field: 'Full Name & Role Names',
+          submittedValue: `Full: ${p.full_name || '—'}`,
+          governmentDbValue: `Worker: ${p.worker_name || '—'} | Employer: ${p.employer_name || p.business_name || '—'}`,
+          isMatching: Boolean(p.full_name || p.worker_name || p.employer_name || p.business_name),
+        },
+        {
+          field: 'Registered Mobile Number',
+          submittedValue: p.mobile || 'Not Provided',
+          governmentDbValue: p.mobile && !String(p.mobile).startsWith('DELETED_') ? 'OTP Authenticated' : 'Deleted / Unverified',
+          isMatching: Boolean(p.mobile && !String(p.mobile).startsWith('DELETED_')),
+        },
+        {
+          field: 'Email Address',
+          submittedValue: p.email || 'Not Provided',
+          governmentDbValue: p.email ? p.email : 'No Email Linked',
+          isMatching: Boolean(p.email),
+        },
+        {
+          field: 'KYC & Identity Reference',
+          submittedValue: `Status: ${p.kyc_status || 'not_started'} (W: ${p.worker_kyc_status || 'not_started'} / E: ${p.employer_kyc_status || 'not_started'})`,
+          governmentDbValue: p.id_type || p.id_card_number ? `${p.id_type || 'ID'}: ${p.id_card_number || 'Verified'}` : 'KYC Not Submitted',
+          isMatching: kycStatus === 'APPROVED',
+        },
+        {
+          field: 'Demographics (DOB & Gender)',
+          submittedValue: `DOB: ${p.dob || 'Not Set'}`,
+          governmentDbValue: `Gender: ${p.gender || 'Not Set'}`,
+          isMatching: Boolean(p.dob || p.gender),
+        },
+        {
+          field: 'Location & Address',
+          submittedValue: formattedAddress,
+          governmentDbValue:
+            p.current_lat && p.current_lng
+              ? `GPS: ${Number(p.current_lat).toFixed(4)}, ${Number(p.current_lng).toFixed(4)}`
+              : locationParts.length > 0
+              ? 'Address Saved in Profile'
+              : 'Location Not Provided',
+          isMatching: locationParts.length > 0 || Boolean(p.current_lat && p.current_lng),
+        },
+        {
+          field: 'Bank / UPI / RazorpayX Settlement',
+          submittedValue: p.bank_account_number
+            ? `A/C: ${p.bank_account_number} (${p.bank_ifsc || 'No IFSC'})`
+            : p.upi_id
+            ? `UPI: ${p.upi_id}`
+            : 'No Bank/UPI Entered',
+          governmentDbValue: p.razorpay_account_id
+            ? `RazorpayX: ${p.razorpay_account_id}`
+            : 'No RazorpayX Fund Account',
+          isMatching: Boolean(p.razorpay_account_id || p.bank_account_number || p.upi_id),
+        },
+      ],
     };
   },
 
@@ -192,6 +446,7 @@ export const adminApi = {
       console.error('Supabase approve error:', error);
       throw new Error(`Failed to approve KYC in Supabase: ${error.message}`);
     }
+    invalidateProfilesCache();
   },
 
   async rejectKyc(userId: string, reason: string): Promise<void> {
@@ -209,16 +464,13 @@ export const adminApi = {
       console.error('Supabase reject error:', error);
       throw new Error(`Failed to reject KYC in Supabase: ${error.message}`);
     }
+    invalidateProfilesCache();
   },
 
   async syncDidit(): Promise<{ syncedCount: number }> {
-    const { data: profiles, error } = await supabase
-      .from('profiles')
-      .select('id, didit_verification_id')
-      .not('didit_verification_id', 'is', null);
-
-    if (error) throw new Error(error.message);
-    return { syncedCount: profiles?.length || 0 };
+    const { rows: profiles } = await fetchAllProfilesRows(true);
+    const verified = profiles.filter((p) => p.id_type === 'Didit' || p.kyc_status === 'approved');
+    return { syncedCount: verified.length };
   },
 
   // --- 2. User & Account Management Controller Endpoints ---
@@ -233,6 +485,7 @@ export const adminApi = {
       .eq('id', userId);
 
     if (error) throw new Error(error.message);
+    invalidateProfilesCache();
   },
 
   async flagUser(userId: string, reason: string): Promise<void> {
@@ -242,6 +495,7 @@ export const adminApi = {
       .eq('id', userId);
 
     if (error) throw new Error(error.message);
+    invalidateProfilesCache();
   },
 
   // --- 3. Support Tickets & Issue Reports Endpoints ---
@@ -427,27 +681,28 @@ export const adminApi = {
       .select('*')
       .order('created_at', { ascending: false });
 
-    const { data: profiles } = await supabase.from('profiles').select('id, full_name, worker_name, employer_name, mobile, role, is_suspended, kyc_status');
+    const { rows: profiles } = await fetchAllProfilesRows();
     const profileMap = new Map((profiles || []).map(p => [p.id, p]));
 
     if (!error && alerts && alerts.length > 0) {
       return alerts.map((f) => {
         const u = profileMap.get(f.user_id);
-        const userName = u?.worker_name || u?.full_name || u?.employer_name || f.user_name || (u?.mobile ? `User ${u.mobile}` : 'Flagged User');
+        const norm = u ? normalizeProfileRow(u) : null;
+        const userName = norm?.name || f.user_name || 'Flagged User';
 
         return {
           alertId: f.id,
           userId: f.user_id,
           userName,
-          userRole: f.user_role || (u?.employer_name ? 'employer' : 'worker'),
+          userRole: f.user_role || norm?.roleType || 'worker',
           riskScore: f.risk_score || 85,
           alertType: f.alert_type || 'LOCATION_SPOOFING',
           severity: (f.severity?.toUpperCase() as any) || 'HIGH',
           details: f.details || f.description || 'Automated risk flag logged in Supabase',
-          ipAddress: f.ip_address || '103.22.45.12',
-          deviceId: f.device_id || 'Android-Device',
-          location: f.location || 'India',
-          timestamp: f.created_at || new Date().toISOString(),
+          ipAddress: f.ip_address || 'N/A',
+          deviceId: f.device_id || 'Device',
+          location: f.location || norm?.city || 'India',
+          timestamp: f.created_at || u?.updated_at || u?.created_at || '',
           status: u?.is_suspended ? 'SUSPENDED' : ((f.status?.toUpperCase() as any) || 'ACTIVE'),
         };
       });
@@ -456,21 +711,24 @@ export const adminApi = {
     if (profiles && profiles.length > 0) {
       const suspended = profiles.filter(p => p.is_suspended || p.kyc_status === 'rejected');
       if (suspended.length > 0) {
-        return suspended.map((p) => ({
-          alertId: `alert_${p.id.slice(0, 8)}`,
-          userId: p.id,
-          userName: p.worker_name || p.full_name || p.employer_name || (p.mobile ? `User ${p.mobile}` : p.id.slice(0, 6)),
-          userRole: p.employer_name ? 'employer' : 'worker',
-          riskScore: p.is_suspended ? 95 : 80,
-          alertType: 'SUSPICIOUS_PAYOUT',
-          severity: p.is_suspended ? 'CRITICAL' : 'HIGH',
-          details: `Account flagged in Supabase profiles (Suspended: ${p.is_suspended || false}, KYC: ${p.kyc_status || 'not_started'})`,
-          ipAddress: '106.51.78.22',
-          deviceId: `Device-${p.id.slice(0, 5)}`,
-          location: 'Chennai, TN',
-          timestamp: new Date().toISOString(),
-          status: p.is_suspended ? 'SUSPENDED' : 'FLAGGED',
-        }));
+        return suspended.map((p) => {
+          const norm = normalizeProfileRow(p);
+          return {
+            alertId: `alert_${p.id.slice(0, 8)}`,
+            userId: p.id,
+            userName: norm.name,
+            userRole: norm.roleType,
+            riskScore: p.is_suspended ? 95 : 80,
+            alertType: 'SUSPICIOUS_PAYOUT',
+            severity: p.is_suspended ? 'CRITICAL' : 'HIGH',
+            details: `Account flagged in Supabase profiles (Suspended: ${p.is_suspended || false}, KYC: ${p.kyc_status || 'not_started'})`,
+            ipAddress: 'Logged in Profile',
+            deviceId: `Profile-${p.id.slice(0, 6)}`,
+            location: norm.city,
+            timestamp: p.updated_at || p.created_at || '',
+            status: p.is_suspended ? 'SUSPENDED' : 'FLAGGED',
+          };
+        });
       }
     }
 
@@ -492,6 +750,7 @@ export const adminApi = {
       const newScore = Math.max(0, (p.trust_score || 80) - 10);
       await supabase.from('profiles').update({ trust_score: newScore }).eq('id', userId);
     }
+    invalidateProfilesCache();
   },
 
   async issueBonus(userId: string, amount: number, reason: string): Promise<void> {
@@ -508,6 +767,7 @@ export const adminApi = {
       const newScore = Math.min(100, (p.trust_score || 80) + 5);
       await supabase.from('profiles').update({ trust_score: newScore }).eq('id', userId);
     }
+    invalidateProfilesCache();
   },
 
   // --- 9. B2B Organizations ---
@@ -529,9 +789,9 @@ export const adminApi = {
       totalSpend: (o.total_rewards || 0) * 1000,
       tier: 'ENTERPRISE',
       createdAt: o.created_at,
-      contactEmail: o.email || 'contact@org.com',
-      contactPhone: o.contact_number || '+91 99999 88888',
-      taxId: o.unique_code || '29AAAAA0000A1Z5'
+      contactEmail: o.email || 'Not Provided',
+      contactPhone: o.contact_number || 'Not Provided',
+      taxId: o.unique_code || 'N/A'
     }));
   },
 
@@ -548,9 +808,9 @@ export const adminApi = {
       totalSpend: (o.total_rewards || 0) * 1000,
       tier: 'ENTERPRISE',
       createdAt: o.created_at,
-      contactEmail: o.email || 'contact@org.com',
-      contactPhone: o.contact_number || '+91 99999 88888',
-      taxId: o.unique_code || '29AAAAA0000A1Z5'
+      contactEmail: o.email || 'Not Provided',
+      contactPhone: o.contact_number || 'Not Provided',
+      taxId: o.unique_code || 'N/A'
     } : {
       orgId,
       name: 'Organization',
@@ -560,16 +820,16 @@ export const adminApi = {
       activeZigsCount: 0,
       totalSpend: 0,
       tier: 'ENTERPRISE',
-      createdAt: new Date().toISOString(),
-      contactEmail: 'contact@org.com',
-      contactPhone: '+91 99999 88888',
-      taxId: '29AAAAA0000A1Z5'
+      createdAt: '',
+      contactEmail: 'Not Provided',
+      contactPhone: 'Not Provided',
+      taxId: 'N/A'
     };
 
     return {
       org,
       members: [
-        { id: 'm_1', name: org.name, email: org.contactEmail, role: 'ADMIN', joinedAt: org.createdAt.substring(0, 10), status: 'ACTIVE' }
+        { id: 'm_1', name: org.name, email: org.contactEmail, role: 'ADMIN', joinedAt: org.createdAt ? org.createdAt.substring(0, 10) : 'N/A', status: 'ACTIVE' }
       ],
       postedZigs: [],
       invoices: []
@@ -609,44 +869,57 @@ export const adminApi = {
     console.log(`Org ${orgId} active status set to: ${active}`);
   },
 
-  // --- 10. Analytics Engine (100% LIVE from Supabase tables — profiles, tasks, disputes) ---
+  // --- 10. Analytics Engine (100% LIVE from Supabase tables — ALL profiles paginated, tasks, disputes) ---
   async fetchAnalytics(metricKey: AnalyticsMetricKey): Promise<AnalyticsSnapshot> {
-    // Try to get snapshot timestamp (optional, never blocks live data)
-    const { data: snapshotRow } = await supabase
-      .from('admin_analytics_snapshot')
-      .select('computed_at, metric_value')
-      .eq('metric_key', metricKey)
-      .maybeSingle();
+    const [snapshotRes, tasksRes, profilesRes, disputesRes] = await Promise.all([
+      supabase
+        .from('admin_analytics_snapshot')
+        .select('computed_at, metric_value')
+        .eq('metric_key', metricKey)
+        .maybeSingle(),
+      supabase.from('tasks').select('*').order('created_at', { ascending: false }).range(0, 9999),
+      fetchAllProfilesRows(),
+      supabase.from('disputes').select('*').range(0, 9999),
+    ]);
 
+    const snapshotRow = snapshotRes.data;
     const snapshotRaw = snapshotRow?.metric_value;
-    const computedAt = snapshotRow?.computed_at || new Date().toISOString();
+    const computedAt = profilesRes.isoTimestamp || snapshotRow?.computed_at || new Date().toISOString();
 
-    // ====== ALL DATA IS FETCHED LIVE FROM DATABASE TABLES ======
-    const { data: tasks, error: tasksErr } = await supabase.from('tasks').select('*').range(0, 9999);
-    const { data: profiles, count: profileCount, error: profilesErr } = await supabase.from('profiles').select('*', { count: 'exact' }).range(0, 9999);
-    const { data: disputes, error: disputesErr } = await supabase.from('disputes').select('*').range(0, 9999);
+    const allProfiles = profilesRes.rows || [];
+    const allTasks = tasksRes.data || [];
+    const allDisputes = disputesRes.data || [];
 
-    // Debug logging — check browser console if counts look wrong
-    console.log('[ADMIN ANALYTICS] profiles query:', { count: profileCount, rows: profiles?.length, error: profilesErr?.message });
-    console.log('[ADMIN ANALYTICS] tasks query:', { rows: tasks?.length, error: tasksErr?.message });
-    console.log('[ADMIN ANALYTICS] disputes query:', { rows: disputes?.length, error: disputesErr?.message });
-
-    const allProfiles = profiles || [];
-    const allTasks = tasks || [];
-    const allDisputes = disputes || [];
-
-    // Live counts from profiles table
-    const totalUsers = profileCount ?? allProfiles.length;
+    // Live counts across ALL profiles in Supabase (no 1000-row truncation)
+    const totalUsers = allProfiles.length;
     const workerCount = allProfiles.filter(p => Boolean(p.worker_name && String(p.worker_name).trim() !== '')).length;
-    const employerCount = allProfiles.filter(p => Boolean(p.employer_name && String(p.employer_name).trim() !== '')).length;
+    const employerCount = allProfiles.filter(p => Boolean(
+      (p.employer_name && String(p.employer_name).trim() !== '') ||
+      (p.business_name && String(p.business_name).trim() !== '')
+    )).length;
+    const bothRolesCount = allProfiles.filter(p =>
+      Boolean(p.worker_name && String(p.worker_name).trim() !== '') &&
+      Boolean((p.employer_name && String(p.employer_name).trim() !== '') || (p.business_name && String(p.business_name).trim() !== ''))
+    ).length;
+    const pendingSetupCount = allProfiles.filter(p =>
+      !p.worker_name && !p.employer_name && !p.business_name
+    ).length;
 
-    // Live counts from tasks table (STATUS VALUES ARE LOWERCASE: 'open', 'completed', 'cancelled', 'in_progress', 'applied')
+    const approvedKycCount = allProfiles.filter(p => normalizeKycStatus(p) === 'APPROVED').length;
+    const notStartedKycCount = allProfiles.filter(p => normalizeKycStatus(p) === 'NOT_STARTED').length;
+    const pendingKycCount = allProfiles.filter(p => normalizeKycStatus(p) === 'PENDING').length;
+
+    // Live counts from tasks table using unified case-insensitive deriveTaskStatus
     const totalTaskCount = allTasks.length;
-    const completedTasks = allTasks.filter(t => t.status === 'completed' || t.payment_status === 'paid');
+    const completedTasks = allTasks.filter(t => deriveTaskStatus(t) === 'COMPLETED');
     const completedCount = completedTasks.length;
-    const activeTasks = allTasks.filter(t => t.status === 'open' || t.status === 'applied' || t.status === 'in_progress');
+    const activeTasks = allTasks.filter(t => {
+      const st = deriveTaskStatus(t);
+      return st === 'POSTED' || st === 'ASSIGNED' || st === 'IN_PROGRESS';
+    });
     const activeCount = activeTasks.length;
-    const cancelledCount = allTasks.filter(t => t.status === 'cancelled').length;
+    const cancelledCount = allTasks.filter(t => deriveTaskStatus(t) === 'CANCELLED').length;
+    const expiredCount = allTasks.filter(t => deriveTaskStatus(t) === 'EXPIRED').length;
 
     // Live GMV from completed tasks ONLY
     const liveGmv = completedTasks.reduce((acc, t) => acc + (Number(t.payout) || 0), 0);
@@ -654,52 +927,59 @@ export const adminApi = {
     const liveRevenue = livePlatformFees > 0 ? livePlatformFees : Number((liveGmv * 0.075).toFixed(2));
     const fulfillmentRate = totalTaskCount > 0 ? Number(((completedCount / totalTaskCount) * 100).toFixed(1)) : 0;
 
-    // Live disputes count (status: 'pending', 'investigating', 'resolved', 'dismissed')
-    const openDisputesCount = allDisputes.filter(d => d.status === 'pending' || d.status === 'investigating').length;
+    // Live disputes count
+    const openDisputesCount = allDisputes.filter(d => {
+      const s = String(d.status || '').toLowerCase();
+      return s === 'pending' || s === 'investigating' || s === 'open';
+    }).length;
 
-    // Today & this week task counts (live)
-    const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const weekStart = new Date(todayStart);
-    weekStart.setDate(weekStart.getDate() - 7);
-    const todayZigs = allTasks.filter(t => new Date(t.created_at) >= todayStart).length;
-    const weekZigs = allTasks.filter(t => new Date(t.created_at) >= weekStart).length;
+    // Today & this week task counts calculated strictly in IST (Asia/Kolkata, UTC+5:30)
+    const todayStartIstMs = getISTStartOfTodayMs();
+    const weekStartIstMs = todayStartIstMs - 7 * 24 * 60 * 60 * 1000;
+    const todayZigs = allTasks.filter(t => t.created_at && new Date(t.created_at).getTime() >= todayStartIstMs).length;
+    const weekZigs = allTasks.filter(t => t.created_at && new Date(t.created_at).getTime() >= weekStartIstMs).length;
 
     let normalizedData: any;
 
-    // GMV history from live completed tasks
+    // GMV history from live completed tasks (using IST month/year)
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const currentMonth = now.getMonth();
+    const nowIstDateKey = getISTDateKey(new Date()); // YYYY-MM-DD in IST
+    const [istYearStr, istMonthStr] = nowIstDateKey ? nowIstDateKey.split('-') : [String(new Date().getFullYear()), String(new Date().getMonth() + 1)];
+    const currentIstYear = Number(istYearStr);
+    const currentIstMonthIdx = Number(istMonthStr) - 1;
+
     const last7Months = Array.from({ length: 7 }, (_, i) => {
-      const d = new Date();
-      d.setMonth(currentMonth - (6 - i));
-      return { monthName: monthNames[d.getMonth()], monthIdx: d.getMonth(), year: d.getFullYear() };
+      const d = new Date(Date.UTC(currentIstYear, currentIstMonthIdx - (6 - i), 1));
+      return { monthName: monthNames[d.getUTCMonth()], monthIdx: d.getUTCMonth(), year: d.getUTCFullYear() };
     });
 
     const gmvHistory = last7Months.map(m => {
       const monthTasks = completedTasks.filter(t => {
-        const taskDate = new Date(t.created_at || Date.now());
-        return taskDate.getMonth() === m.monthIdx && taskDate.getFullYear() === m.year;
+        if (!t.created_at) return false;
+        const istKey = getISTDateKey(t.created_at);
+        if (!istKey) return false;
+        const [y, mo] = istKey.split('-').map(Number);
+        return (mo - 1) === m.monthIdx && y === m.year;
       });
       const mGmv = monthTasks.reduce((acc, t) => acc + (Number(t.payout) || 0), 0);
       const mRev = Number((mGmv * 0.075).toFixed(2));
       return { month: m.monthName, gmv: mGmv, revenue: mRev };
     });
 
-    // Role distribution from live profiles (profiles table has: role, worker_name, employer_name)
-    const roleCounts: Record<string, number> = {};
-    allProfiles.forEach(p => {
-      const r = (p.role || 'user').toString().trim() || 'user';
-      roleCounts[r] = (roleCounts[r] || 0) + 1;
-    });
-    const roleDistribution = Object.entries(roleCounts).map(([name, value]) => ({ name, value }));
+    // Role & KYC distribution from all live profiles
+    const roleDistribution = [
+      { name: 'Workers', value: workerCount },
+      { name: 'Employers', value: employerCount },
+      { name: 'Dual Role (Both)', value: bothRolesCount },
+      { name: 'Pending Name Setup', value: pendingSetupCount },
+    ].filter(r => r.value > 0);
 
     // Average weekly income from completed tasks
     const weeklyIncome = completedTasks.length > 0
-      ? Number((completedTasks.reduce((acc, t) => acc + (Number(t.payout) || 0), 0) / Math.max(1, Math.ceil((Date.now() - new Date(completedTasks[0]?.created_at || Date.now()).getTime()) / (7 * 24 * 60 * 60 * 1000)))).toFixed(2))
+      ? Number((completedTasks.reduce((acc, t) => acc + (Number(t.payout) || 0), 0) / Math.max(1, Math.ceil((Date.now() - new Date(completedTasks[completedTasks.length - 1]?.created_at || Date.now()).getTime()) / (7 * 24 * 60 * 60 * 1000)))).toFixed(2))
       : 0;
 
-    // Work categories from live tasks (classified properly into Catering, Pamphlet Distribution, Packers & Movers, etc.)
+    // Work categories from live tasks (classified into Catering, Pamphlet Distribution, Packers & Movers, etc.)
     const categoryCounts: Record<string, { count: number; totalPay: number; completed: number }> = {};
     allTasks.forEach(t => {
       const c = (t.category || '').toLowerCase().trim();
@@ -714,12 +994,12 @@ export const adminApi = {
         cat = 'Packers & Movers';
       } else if (c.includes('delivery') || title.includes('delivery') || title.includes('courier')) {
         cat = 'Delivery & Courier';
-      } else if (c.includes('volunteer') || title.includes('volunteer') || title.includes('installation') || title.includes('app installation')) {
+      } else if (c.includes('volunteer') || title.includes('volunteer') || c.includes('promoter') || title.includes('promoter') || title.includes('installation') || title.includes('onboarding')) {
         cat = 'Volunteers & Promotions';
-      } else if (c.includes('retail') || title.includes('retail') || title.includes('store') || title.includes('shop')) {
-        cat = 'Retail & Store Support';
-      } else if (c.includes('event') || title.includes('event') || title.includes('usher')) {
-        cat = 'Event Staffing';
+      } else if (c.includes('retail') || title.includes('retail') || c.includes('stall') || title.includes('stall') || title.includes('store') || title.includes('shop')) {
+        cat = 'Retail & Stall Support';
+      } else if (c.includes('event') || title.includes('event') || title.includes('usher') || title.includes('umpir')) {
+        cat = 'Event & Sports Staffing';
       } else if (c.includes('cleaning') || title.includes('cleaning') || title.includes('housekeeping')) {
         cat = 'Cleaning & Housekeeping';
       } else if (t.category && String(t.category).trim().length > 0) {
@@ -731,7 +1011,7 @@ export const adminApi = {
       if (!categoryCounts[cat]) categoryCounts[cat] = { count: 0, totalPay: 0, completed: 0 };
       categoryCounts[cat].count++;
       categoryCounts[cat].totalPay += Number(t.payout) || 0;
-      if (t.status === 'completed' || t.status === 'COMPLETED' || t.payment_status === 'paid') categoryCounts[cat].completed++;
+      if (deriveTaskStatus(t) === 'COMPLETED') categoryCounts[cat].completed++;
     });
     const workCategories = Object.entries(categoryCounts).map(([name, stats]) => ({
       name,
@@ -740,7 +1020,7 @@ export const adminApi = {
       completionRate: stats.count > 0 ? Math.round((stats.completed / stats.count) * 100) : 0,
       count: stats.count,
       totalZigs: stats.count,
-      trend: `+${stats.completed}`
+      trend: `+${stats.count}`
     }));
 
     if (metricKey === 'overview') {
@@ -755,6 +1035,7 @@ export const adminApi = {
         completedZigs: completedCount,
         completed_zigs: completedCount,
         cancelled_zigs: cancelledCount,
+        expired_zigs: expiredCount,
         total_zigs: totalTaskCount,
         today_zigs: todayZigs,
         week_zigs: weekZigs,
@@ -776,12 +1057,18 @@ export const adminApi = {
         age_distribution: {
           averageAge: 0,
           items: [
-            { label: 'Workers', count: `${workerCount} users` },
-            { label: 'Employers', count: `${employerCount} users` },
-            { label: 'Total', count: `${totalUsers} users` }
+            { label: 'Workers (Worker Profile Set)', count: `${workerCount} users` },
+            { label: 'Employers (Employer Profile Set)', count: `${employerCount} users` },
+            { label: 'Dual Role (Worker & Employer)', count: `${bothRolesCount} users` },
+            { label: 'Total Registered Accounts', count: `${totalUsers} users` }
           ]
         },
-        occupations_and_gender: roleDistribution.map(r => ({ label: r.name, count: r.value })),
+        occupations_and_gender: [
+          { label: 'KYC Approved (Didit Verified)', count: approvedKycCount },
+          { label: 'KYC Not Started', count: notStartedKycCount },
+          { label: 'KYC Pending Review', count: pendingKycCount },
+          { label: 'Pending Name Setup', count: pendingSetupCount },
+        ],
         average_weekly_income: weeklyIncome
       };
     } else if (metricKey === 'work_categories') {
@@ -794,13 +1081,14 @@ export const adminApi = {
         ageDistribution: [
           { group: 'Workers', percentage: workerCount },
           { group: 'Employers', percentage: employerCount },
-          { group: 'Other', percentage: Math.max(0, totalUsers - workerCount - employerCount) }
+          { group: 'Dual Role (Worker + Employer)', percentage: bothRolesCount },
+          { group: 'Pending Name Setup', percentage: pendingSetupCount }
         ],
         genderSplit: roleDistribution,
         occupationStatus: [
-          { label: 'Worker Name Set', percentage: workerCount },
-          { label: 'Employer Name Set', percentage: employerCount },
-          { label: 'Pending Name Setup', percentage: Math.max(0, totalUsers - workerCount - employerCount) }
+          { label: 'KYC Approved (Verified)', percentage: approvedKycCount },
+          { label: 'KYC Not Started', percentage: notStartedKycCount },
+          { label: 'KYC Pending Review', percentage: pendingKycCount }
         ]
       };
     } else if (metricKey === 'worker_income') {
@@ -818,7 +1106,7 @@ export const adminApi = {
         fulfillmentRate,
         completedZigs: completedCount,
         activeZigs: activeCount,
-        cancelled_zigs: cancelledCount
+        cancelled_zigs: cancelledCount + expiredCount
       };
     } else if (metricKey === 'trust_safety') {
       normalizedData = {
@@ -832,26 +1120,34 @@ export const adminApi = {
         cancelled_zigs: cancelledCount
       };
     } else if (metricKey === 'growth_trends') {
-      // Live signups and completions from profiles & tasks
+      // Live signups and completions grouped strictly by IST (Asia/Kolkata) date
       const dailyData: Record<string, { userSignups: number; zigsCompleted: number }> = {};
-      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-      allProfiles.filter(p => p.created_at && new Date(p.created_at) >= thirtyDaysAgo).forEach(p => {
-        const day = new Date(p.created_at).toISOString().slice(0, 10);
-        if (!dailyData[day]) dailyData[day] = { userSignups: 0, zigsCompleted: 0 };
-        dailyData[day].userSignups++;
-      });
-      allTasks.filter(t => t.created_at && new Date(t.created_at) >= thirtyDaysAgo).forEach(t => {
-        const day = new Date(t.created_at).toISOString().slice(0, 10);
-        if (!dailyData[day]) dailyData[day] = { userSignups: 0, zigsCompleted: 0 };
-        if (t.status === 'completed' || t.payment_status === 'paid') {
-          dailyData[day].zigsCompleted++;
-        }
-      });
-      normalizedData = Object.entries(dailyData).sort().map(([month, stats]) => ({
-        month,
-        userSignups: stats.userSignups,
-        zigsCompleted: stats.zigsCompleted
-      }));
+      const thirtyDaysAgoMs = todayStartIstMs - 30 * 24 * 60 * 60 * 1000;
+      allProfiles
+        .filter(p => p.created_at && new Date(p.created_at).getTime() >= thirtyDaysAgoMs)
+        .forEach(p => {
+          const day = getISTDateKey(p.created_at);
+          if (!day) return;
+          if (!dailyData[day]) dailyData[day] = { userSignups: 0, zigsCompleted: 0 };
+          dailyData[day].userSignups++;
+        });
+      allTasks
+        .filter(t => t.created_at && new Date(t.created_at).getTime() >= thirtyDaysAgoMs)
+        .forEach(t => {
+          const day = getISTDateKey(t.created_at);
+          if (!day) return;
+          if (!dailyData[day]) dailyData[day] = { userSignups: 0, zigsCompleted: 0 };
+          if (deriveTaskStatus(t) === 'COMPLETED') {
+            dailyData[day].zigsCompleted++;
+          }
+        });
+      normalizedData = Object.entries(dailyData)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([month, stats]) => ({
+          month,
+          userSignups: stats.userSignups,
+          zigsCompleted: stats.zigsCompleted
+        }));
     } else if (metricKey === 'geographic') {
       // Live from tasks location_name
       const locationCounts: Record<string, number> = {};
@@ -879,6 +1175,7 @@ export const adminApi = {
   },
 
   async triggerAnalyticsRefresh(): Promise<void> {
+    invalidateProfilesCache();
     const now = new Date().toISOString();
     await supabase
       .from('admin_analytics_snapshot')
@@ -893,68 +1190,73 @@ export const adminApi = {
       .select('*')
       .order('created_at', { ascending: false });
 
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, worker_name, full_name, mobile, referral_code, worker_referral_code, referred_by_id');
+    const { rows: profiles } = await fetchAllProfilesRows();
     const profileMap = new Map((profiles || []).map(p => [p.id, p]));
 
     if (!error && refs && refs.length > 0) {
       return refs.map(r => {
-        const referrer = profileMap.get(r.referrer_id || r.referrer_user_id);
-        const referee = profileMap.get(r.referred_id || r.referred_user_id || r.referee_id);
+        const referrerId = r.referrer_id || r.referrer_user_id;
+        const refereeId = r.referred_id || r.referred_user_id || r.referee_id;
+        const referrer = profileMap.get(referrerId);
+        const referee = profileMap.get(refereeId);
+        const referrerNorm = referrer ? normalizeProfileRow(referrer) : null;
+        const refereeNorm = referee ? normalizeProfileRow(referee) : null;
         
         return {
           id: r.id,
-          referrerId: r.referrer_id || r.referrer_user_id || 'usr_ref',
-          referrerName: referrer?.worker_name || referrer?.full_name || 'Referrer ' + (r.referrer_id?.slice(0, 5) || ''),
-          referrerPhone: referrer?.mobile || '+91 98765 43210',
-          referredId: r.referred_id || r.referred_user_id || 'usr_target',
-          referredName: referee?.worker_name || referee?.full_name || 'Referred User ' + (r.referred_id?.slice(0, 5) || ''),
-          referredPhone: referee?.mobile || '+91 98765 43210',
-          referralCode: referrer?.referral_code || referrer?.worker_referral_code || 'REF' + (r.id.slice(0, 6).toUpperCase()),
+          referrerId: referrerId || 'N/A',
+          referrerName: referrerNorm?.name || (referrerId ? `User (${referrerId.slice(0, 8)})` : 'Unknown Referrer'),
+          referrerPhone: referrerNorm?.phone || 'Not Provided',
+          referredId: refereeId || 'N/A',
+          referredName: refereeNorm?.name || (refereeId ? `User (${refereeId.slice(0, 8)})` : 'Unknown Referee'),
+          referredPhone: refereeNorm?.phone || 'Not Provided',
+          referralCode: referrer?.referral_code || referrer?.worker_referral_code || 'REF-' + (r.id.slice(0, 6).toUpperCase()),
           status: r.status || 'waiting',
-          rewardAmount: r.reward_amount || 100,
+          rewardAmount: Number(r.reward_amount) || 0,
           referralType: r.referral_type || 'worker',
-          createdAt: r.created_at || new Date().toISOString(),
+          createdAt: r.created_at || '',
           convertedAt: r.converted_at,
         };
       });
     }
 
-    const referredProfiles = (profiles || []).filter(p => p.referred_by_id || (p.referral_code && p.referral_code.length > 0));
+    const referredProfiles = (profiles || []).filter(p => p.referred_by_id);
     return referredProfiles.map(p => {
       const referrer = profileMap.get(p.referred_by_id || '');
+      const referrerNorm = referrer ? normalizeProfileRow(referrer) : null;
+      const refereeNorm = normalizeProfileRow(p);
       return {
         id: `ref_${p.id.slice(0, 8)}`,
         referrerId: p.referred_by_id || p.id,
-        referrerName: referrer?.worker_name || referrer?.full_name || (p.referred_by_id ? 'Referrer' : p.worker_name || p.full_name || 'User'),
-        referrerPhone: referrer?.mobile || p.mobile || '+91 98765 43210',
+        referrerName: referrerNorm?.name || 'Referrer',
+        referrerPhone: referrerNorm?.phone || 'Not Provided',
         referredId: p.id,
-        referredName: p.worker_name || p.full_name || 'User ' + p.id.slice(0, 5),
-        referredPhone: p.mobile || '+91 98765 43210',
-        referralCode: p.referral_code || p.worker_referral_code || 'REF' + p.id.slice(0, 6).toUpperCase(),
-        status: p.referred_by_id ? 'converted' : 'waiting',
-        rewardAmount: 100,
+        referredName: refereeNorm.name,
+        referredPhone: refereeNorm.phone,
+        referralCode: referrer?.referral_code || p.referral_code || 'REF-' + p.id.slice(0, 6).toUpperCase(),
+        status: 'converted',
+        rewardAmount: Number(p.referral_earnings) || 0,
         referralType: 'worker',
-        createdAt: new Date().toISOString(),
+        createdAt: p.created_at || '',
       };
     });
   },
 
   // --- 12. Gamification, Ratings & Escrow Metrics (Real Database Query) ---
   async fetchGamificationMetrics() {
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, worker_name, full_name, trust_score');
+    const { rows: profiles } = await fetchAllProfilesRows();
 
     const topWorkers = (profiles || [])
-      .map(p => ({
-        id: p.id,
-        name: p.worker_name || p.full_name || 'Worker ' + p.id.slice(0, 5),
-        trustScore: p.trust_score || 95,
-        skillPoints: (p.trust_score || 95) * 14 + 320,
-        onTimeRate: 96.4,
-      }))
+      .map(p => {
+        const norm = normalizeProfileRow(p);
+        return {
+          id: p.id,
+          name: norm.name,
+          trustScore: norm.trustScore,
+          skillPoints: norm.trustScore * 14 + (Number(p.completed_orders) || 0) * 50,
+          onTimeRate: Number(p.total_on_time_rate) || 100,
+        };
+      })
       .sort((a, b) => b.skillPoints - a.skillPoints)
       .slice(0, 5);
 
@@ -977,25 +1279,23 @@ export const adminApi = {
       .select('*')
       .order('created_at', { ascending: false });
 
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, worker_name, full_name, mobile');
-
+    const { rows: profiles } = await fetchAllProfilesRows();
     const profileMap = new Map((profiles || []).map(p => [p.id, p]));
 
     if (!error && tickets && tickets.length > 0) {
       return tickets.map(t => {
         const u = profileMap.get(t.user_id);
+        const norm = u ? normalizeProfileRow(u) : null;
         return {
           id: t.id,
           userId: t.user_id,
-          userName: u?.worker_name || u?.full_name || 'User ' + t.user_id.slice(0, 5),
-          userPhone: u?.mobile || '+91 98765 43210',
+          userName: norm?.name || (t.user_id ? `User (${t.user_id.slice(0, 8)})` : 'Unknown User'),
+          userPhone: norm?.phone || 'Not Provided',
           category: t.category || 'General',
           subject: t.subject || 'Support Ticket',
           description: t.description || '',
           status: (t.status?.toUpperCase() || 'OPEN') as 'OPEN' | 'REPLIED' | 'CLOSED',
-          createdAt: t.created_at || new Date().toISOString(),
+          createdAt: t.created_at || '',
           updatedAt: t.updated_at,
         };
       });
@@ -1019,33 +1319,29 @@ export const adminApi = {
       .select('*')
       .order('created_at', { ascending: false });
 
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, worker_name, full_name, employer_name, mobile');
-
+    const { rows: profiles } = await fetchAllProfilesRows();
     const profileMap = new Map((profiles || []).map(p => [p.id, p]));
 
     if (!error && tasks && tasks.length > 0) {
       return tasks.map(t => {
         const creator = profileMap.get(t.created_by);
-        const assignee = profileMap.get(t.assigned_to);
+        const assignee = t.assigned_to ? profileMap.get(t.assigned_to) : undefined;
+        const creatorNorm = creator ? normalizeProfileRow(creator) : null;
+        const assigneeNorm = assignee ? normalizeProfileRow(assignee) : null;
 
-        const isPastEndTime = t.end_time ? new Date(t.end_time).getTime() < Date.now() : false;
-
-        let derivedStatus = (t.status?.toUpperCase() || 'POSTED');
-        if (t.assigned_to && (t.completed_at || t.actual_end_time || t.check_out_photo)) {
-          derivedStatus = 'COMPLETED';
-        } else if (isPastEndTime) {
-          derivedStatus = 'EXPIRED';
-        } else if (!t.assigned_to) {
-          derivedStatus = 'POSTED';
-        } else if (t.started_at || t.actual_start_time || t.check_in_photo) {
-          derivedStatus = 'IN_PROGRESS';
-        } else if (t.assigned_to) {
-          derivedStatus = 'ASSIGNED';
-        }
-
+        const derivedStatus = deriveTaskStatus(t);
         const derivedPaymentStatus = derivedStatus === 'COMPLETED' ? 'paid' : (t.payment_status || 'pending_payment');
+
+        const creatorDisplayName =
+          creatorNorm?.employerName ||
+          creatorNorm?.businessName ||
+          creatorNorm?.fullName ||
+          creatorNorm?.name ||
+          (t.created_by ? `Employer (${t.created_by.slice(0, 8)})` : 'Unknown Employer');
+
+        const assigneeDisplayName = t.assigned_to
+          ? (assigneeNorm?.workerName || assigneeNorm?.fullName || assigneeNorm?.name || `Worker (${t.assigned_to.slice(0, 8)})`)
+          : 'Unassigned';
 
         return {
           id: t.id,
@@ -1057,11 +1353,11 @@ export const adminApi = {
           status: derivedStatus,
           paymentStatus: derivedPaymentStatus,
           createdBy: t.created_by,
-          createdByName: creator?.employer_name || creator?.full_name || 'Employer ' + (t.created_by ? t.created_by.slice(0, 5) : ''),
-          createdByPhone: creator?.mobile || 'N/A',
+          createdByName: creatorDisplayName,
+          createdByPhone: creatorNorm?.phone || 'Not Provided',
           assignedTo: t.assigned_to,
-          assignedToName: assignee?.worker_name || assignee?.full_name || (t.assigned_to ? 'Worker ' + t.assigned_to.slice(0, 5) : 'Unassigned'),
-          assignedToPhone: assignee?.mobile || 'N/A',
+          assignedToName: assigneeDisplayName,
+          assignedToPhone: t.assigned_to ? (assigneeNorm?.phone || 'Not Provided') : 'N/A',
           locationName: t.location_name || t.location || 'Location Not Specified',
           checkInPhoto: t.check_in_photo || t.check_in_photo_url,
           checkOutPhoto: t.check_out_photo || t.check_out_photo_url,
@@ -1071,7 +1367,7 @@ export const adminApi = {
           workersAssigned: t.workers_assigned || (t.assigned_to ? 1 : 0),
           startTime: t.start_time,
           endTime: t.end_time,
-          createdAt: t.created_at || new Date().toISOString(),
+          createdAt: t.created_at || '',
         };
       });
     }

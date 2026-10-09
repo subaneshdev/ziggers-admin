@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { adminApi } from '../../lib/adminApi';
 import { PostedZigRecord } from '../../types/admin';
-import { formatCurrency, formatDate } from '../../lib/utils';
+import { formatCurrency, formatDate, getISTClockString } from '../../lib/utils';
 import { useToast } from '../ui/Toast';
 
 interface HeaderProps {
@@ -31,12 +31,20 @@ export const Header: React.FC<HeaderProps> = ({ onRefreshData, onToggleMobileSid
   const { success, error } = useToast();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [istClock, setIstClock] = useState<string>(() => getISTClockString(new Date()));
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setIstClock(getISTClockString(new Date()));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Fetch live zigs list for notifications drawer
   const { data: zigs = [] } = useQuery({
     queryKey: ['postedZigsList'],
     queryFn: () => adminApi.fetchPostedZigsList(),
-    refetchInterval: 15000, // auto refetch every 15s for live updates
+    refetchInterval: 30000, // auto refetch every 30s for live updates
   });
 
   // Mutation to mark task as completed directly from notifications
@@ -72,8 +80,14 @@ export const Header: React.FC<HeaderProps> = ({ onRefreshData, onToggleMobileSid
     setIsRefreshing(true);
     try {
       await adminApi.triggerAnalyticsRefresh();
-      await queryClient.invalidateQueries({ queryKey: ['postedZigsList'] });
-      success('Analytics Refresh Triggered', 'Hourly snapshot recalculation completed across all modules.');
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['analytics'] }),
+        queryClient.invalidateQueries({ queryKey: ['verificationQueueUsers'] }),
+        queryClient.invalidateQueries({ queryKey: ['postedZigsList'] }),
+        queryClient.invalidateQueries({ queryKey: ['referralTracking'] }),
+        queryClient.invalidateQueries({ queryKey: ['supportTicketsList'] }),
+      ]);
+      success('Analytics Refresh Triggered', 'Live Supabase data synchronized across all modules.');
       if (onRefreshData) onRefreshData();
     } catch {
       error('Refresh Failed', 'Unable to reach AdminAnalyticsScheduler service.');
@@ -136,10 +150,10 @@ export const Header: React.FC<HeaderProps> = ({ onRefreshData, onToggleMobileSid
           <span className="hidden sm:inline">{isRefreshing ? 'Computing...' : 'Refresh Snapshots'}</span>
         </button>
 
-        {/* Live System Time indicator - hidden on < xl */}
+        {/* Live System Time indicator (IST - Asia/Kolkata) */}
         <div className="hidden xl:flex px-3 py-1.5 rounded-xl bg-[#F0EBE1] border border-[#EBE4D8] items-center space-x-2 text-[11px] font-numeric text-[#2C221E]">
           <Clock className="w-3.5 h-3.5 text-[#0F8B5F]" />
-          <span className="font-bold">UTC {new Date().toISOString().substring(11, 19)}</span>
+          <span className="font-bold">{istClock}</span>
         </div>
 
         {/* Notifications Bell Button */}

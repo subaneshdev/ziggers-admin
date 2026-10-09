@@ -35,7 +35,7 @@ import {
 } from 'lucide-react';
 import { adminApi } from '../../lib/adminApi';
 import { AnalyticsMetricKey } from '../../types/admin';
-import { formatCurrency } from '../../lib/utils';
+import { formatCurrency, formatISTTimestamp } from '../../lib/utils';
 import { useToast } from '../../components/ui/Toast';
 
 const TABS: { key: AnalyticsMetricKey; label: string; icon: any }[] = [
@@ -60,8 +60,9 @@ export const AdminDashboard: React.FC = () => {
   const { data: snapshot, isLoading } = useQuery({
     queryKey: ['analytics', activeTab],
     queryFn: () => adminApi.fetchAnalytics(activeTab),
-    staleTime: 0,
-    refetchInterval: 5000,
+    staleTime: 10000,
+    refetchInterval: 30000,
+    placeholderData: (prev) => prev,
   });
 
   const handleManualRefresh = async () => {
@@ -69,7 +70,7 @@ export const AdminDashboard: React.FC = () => {
     try {
       await adminApi.triggerAnalyticsRefresh();
       await queryClient.invalidateQueries({ queryKey: ['analytics'] });
-      success('Analytics Refreshed', 'Snapshot calculation completed.');
+      success('Analytics Refreshed', 'Live Supabase metrics recalculated in IST.');
     } catch {
       error('Refresh Failed', 'Unable to trigger snapshot calculation.');
     } finally {
@@ -127,7 +128,7 @@ export const AdminDashboard: React.FC = () => {
                     AGGREGATE BUSINESS METRICS
                   </h2>
                   <p className="text-[10px] sm:text-[11px] text-[#665C54] mt-1 font-numeric break-all sm:break-normal">
-                    Last updated: {snapshot?.updatedAt ? new Date(snapshot.updatedAt).toISOString().replace('T', ' ').slice(0, 26) : '2026-08-15 05:50:35.434582'} (Pre-computed cache)
+                    Last updated: {formatISTTimestamp(snapshot?.updatedAt)} (Live Supabase Sync)
                   </p>
                 </div>
 

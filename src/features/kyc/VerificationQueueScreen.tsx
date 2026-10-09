@@ -1,8 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { 
-  ShieldCheck, 
   Search, 
   Filter, 
   Eye, 
@@ -11,32 +10,61 @@ import {
   CheckCircle2, 
   XCircle,
   Phone,
-  Mail
+  Mail,
+  MapPin,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { adminApi } from '../../lib/adminApi';
 import { formatDate } from '../../lib/utils';
+
+const PAGE_SIZE = 50;
 
 export const VerificationQueueScreen: React.FC = () => {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<'ALL' | 'worker' | 'employer'>('ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'NOT_STARTED' | 'APPROVED' | 'REJECTED'>('ALL');
+  const [currentPage, setCurrentPage] = useState(1);
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ['verificationQueueUsers'],
     queryFn: () => adminApi.fetchPendingKycs(),
+    staleTime: 10000,
+    refetchInterval: 30000,
+    placeholderData: (prev) => prev,
   });
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, roleFilter, statusFilter]);
+
   const filteredUsers = users.filter((u) => {
-    const matchesRole = roleFilter === 'ALL' || u.roleType === roleFilter;
+    const matchesRole =
+      roleFilter === 'ALL' ||
+      u.roleType === roleFilter ||
+      (u.hasBothRoles && (roleFilter === 'worker' || roleFilter === 'employer')) ||
+      (roleFilter === 'worker' && Boolean(u.workerName)) ||
+      (roleFilter === 'employer' && Boolean(u.employerName || u.businessName));
+
     const matchesStatus = statusFilter === 'ALL' || u.kycStatus === statusFilter;
+    const q = searchQuery.toLowerCase().trim();
     const matchesSearch =
-      u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.phone.includes(searchQuery) ||
-      u.userId.toLowerCase().includes(searchQuery.toLowerCase());
+      !q ||
+      u.name.toLowerCase().includes(q) ||
+      (u.workerName && u.workerName.toLowerCase().includes(q)) ||
+      (u.employerName && u.employerName.toLowerCase().includes(q)) ||
+      (u.businessName && u.businessName.toLowerCase().includes(q)) ||
+      u.email.toLowerCase().includes(q) ||
+      u.phone.toLowerCase().includes(q) ||
+      (u.city && u.city.toLowerCase().includes(q)) ||
+      u.userId.toLowerCase().includes(q);
     return matchesRole && matchesStatus && matchesSearch;
   });
+
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedUsers = filteredUsers.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   const pendingCount = users.filter(u => u.kycStatus === 'PENDING').length;
   const notStartedCount = users.filter(u => u.kycStatus === 'NOT_STARTED').length;
@@ -46,13 +74,13 @@ export const VerificationQueueScreen: React.FC = () => {
   return (
     <div className="space-y-5 font-poppins text-xs text-[#2C221E]">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
           <h2 className="text-lg font-bold text-[#2C221E] tracking-tight">
             Registered Users & KYC Verification Directory
           </h2>
           <p className="text-[11px] text-[#665C54] mt-0.5">
-            Adjudicate registered worker & employer identities directly from Supabase PostgreSQL profiles ({users.length} total)
+            Adjudicate registered worker & employer identities directly from Supabase PostgreSQL profiles ({users.length} total accounts)
           </p>
         </div>
       </div>
@@ -99,9 +127,9 @@ export const VerificationQueueScreen: React.FC = () => {
       {/* Filter Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-3.5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center space-x-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             <Filter className="w-3.5 h-3.5 text-[#C69432]" />
-            <span className="text-[11px] text-[#665C54] font-semibold uppercase">Role:</span>
+            <span className="text-[11px] text-[#665C54] font-semibold uppercase mr-1">Role:</span>
             {(['ALL', 'worker', 'employer'] as const).map((r) => (
               <button
                 key={r}
@@ -119,8 +147,8 @@ export const VerificationQueueScreen: React.FC = () => {
 
           <div className="h-4 w-px bg-[#EBE4D8] hidden md:block" />
 
-          <div className="flex items-center space-x-2">
-            <span className="text-[11px] text-[#665C54] font-semibold uppercase">Status:</span>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] text-[#665C54] font-semibold uppercase mr-1">Status:</span>
             {(['ALL', 'PENDING', 'NOT_STARTED', 'APPROVED', 'REJECTED'] as const).map((st) => (
               <button
                 key={st}
@@ -143,7 +171,7 @@ export const VerificationQueueScreen: React.FC = () => {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search name, phone, email, ID..."
+            placeholder="Search name, phone, email, city, ID..."
             className="w-full bg-[#F0EBE1] border border-[#EBE4D8] rounded-xl pl-9 pr-3 py-1.5 text-xs text-[#2C221E] placeholder-[#8C827A] focus:outline-none focus:border-[#C69432] font-numeric"
           />
         </div>
@@ -169,59 +197,84 @@ export const VerificationQueueScreen: React.FC = () => {
               <thead className="bg-[#F8F5EE] text-[#C69432] uppercase font-numeric border-b border-[#EBE4D8]">
                 <tr>
                   <th className="py-2.5 px-3">User Profile Identity</th>
-                  <th className="py-2.5 px-3">Contact Email</th>
-                  <th className="py-2.5 px-3">Role Type</th>
+                  <th className="py-2.5 px-3">Contact & Location</th>
+                  <th className="py-2.5 px-3">Role & Profiles</th>
                   <th className="py-2.5 px-3">KYC Status</th>
-                  <th className="py-2.5 px-3 text-right">Registration Date</th>
+                  <th className="py-2.5 px-3 text-right">Registered (IST)</th>
                   <th className="py-2.5 px-3 text-right">Inspect Account</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#EBE4D8]">
-                {filteredUsers.map((user) => (
+                {paginatedUsers.map((user) => (
                   <tr key={user.userId} className="hover:bg-[#F0EBE1]/50 transition-colors group">
                     <td className="py-2.5 px-3">
-                      <div className="font-bold text-[#2C221E] group-hover:text-[#C69432] transition-colors flex items-center space-x-2">
+                      <div className="font-bold text-[#2C221E] group-hover:text-[#C69432] transition-colors flex items-center space-x-1.5">
                         <span>{user.name}</span>
                         <span className="text-[10px] text-[#C69432] font-numeric font-normal">({user.userId.slice(0, 8)})</span>
                       </div>
                       <div className="text-[11px] text-[#665C54] font-numeric flex items-center space-x-1 mt-0.5">
-                        <Phone className="w-3 h-3 text-[#C69432]" />
+                        <Phone className="w-3 h-3 text-[#C69432] shrink-0" />
                         <span>{user.phone}</span>
                       </div>
+                      {user.businessName && (
+                        <div className="text-[10px] text-[#C69432] font-semibold mt-0.5">
+                          Biz: {user.businessName}
+                        </div>
+                      )}
                     </td>
 
                     <td className="py-2.5 px-3 font-numeric text-[#2C221E]">
                       <div className="flex items-center space-x-1">
-                        <Mail className="w-3 h-3 text-[#8C827A]" />
-                        <span>{user.email}</span>
+                        <Mail className="w-3 h-3 text-[#8C827A] shrink-0" />
+                        <span className={user.email === 'Not Provided' ? 'text-[#8C827A] italic' : ''}>{user.email}</span>
+                      </div>
+                      {user.city && user.city !== 'Not Specified' && (
+                        <div className="flex items-center space-x-1 text-[10px] text-[#665C54] mt-0.5">
+                          <MapPin className="w-3 h-3 text-[#C69432] shrink-0" />
+                          <span className="truncate max-w-[180px]">{user.city}</span>
+                        </div>
+                      )}
+                    </td>
+
+                    <td className="py-2.5 px-3 font-numeric">
+                      <span className="uppercase font-bold text-[#2C221E] block">
+                        {user.hasBothRoles ? 'WORKER & EMPLOYER' : user.roleType}
+                      </span>
+                      <div className="text-[10px] text-[#665C54] mt-0.5 space-x-1">
+                        {user.workerName && <span>W: {user.workerName}</span>}
+                        {user.workerName && user.employerName && <span>•</span>}
+                        {user.employerName && <span>E: {user.employerName}</span>}
                       </div>
                     </td>
 
-                    <td className="py-2.5 px-3 font-numeric uppercase font-bold text-[#665C54]">
-                      {user.roleType}
-                    </td>
-
                     <td className="py-2.5 px-3">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-numeric font-bold uppercase border ${
-                          user.kycStatus === 'APPROVED'
-                            ? 'bg-[#0F8B5F]/15 text-[#0F8B5F] border-[#0F8B5F]/30'
-                            : user.kycStatus === 'PENDING'
-                            ? 'bg-[#D97706]/15 text-[#D97706] border-[#D97706]/30'
-                            : user.kycStatus === 'NOT_STARTED'
-                            ? 'bg-[#665C54]/15 text-[#665C54] border-[#665C54]/30'
-                            : 'bg-[#DC2626]/15 text-[#DC2626] border-[#DC2626]/30'
-                        }`}
-                      >
-                        {user.kycStatus === 'NOT_STARTED' ? 'KYC NOT STARTED' : user.kycStatus}
-                      </span>
+                      <div className="flex flex-col items-start gap-1">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-numeric font-bold uppercase border ${
+                            user.kycStatus === 'APPROVED'
+                              ? 'bg-[#0F8B5F]/15 text-[#0F8B5F] border-[#0F8B5F]/30'
+                              : user.kycStatus === 'PENDING'
+                              ? 'bg-[#D97706]/15 text-[#D97706] border-[#D97706]/30'
+                              : user.kycStatus === 'NOT_STARTED'
+                              ? 'bg-[#665C54]/15 text-[#665C54] border-[#665C54]/30'
+                              : 'bg-[#DC2626]/15 text-[#DC2626] border-[#DC2626]/30'
+                          }`}
+                        >
+                          {user.kycStatus === 'NOT_STARTED' ? 'KYC NOT STARTED' : user.kycStatus}
+                        </span>
+                        {user.razorpayAccountId && (
+                          <span className="text-[9px] text-[#0F8B5F] font-numeric font-semibold">
+                            RZP: {user.razorpayAccountId}
+                          </span>
+                        )}
+                      </div>
                     </td>
 
-                    <td className="py-2.5 px-3 text-right text-[#665C54] font-numeric">
-                      {formatDate((user as any).submittedAt || (user as any).createdAt)}
+                    <td className="py-2.5 px-3 text-right text-[#665C54] font-numeric whitespace-nowrap">
+                      {formatDate(user.createdAt)}
                     </td>
 
-                    <td className="py-2.5 px-3 text-right">
+                    <td className="py-2.5 px-3 text-right whitespace-nowrap">
                       <button
                         onClick={() => navigate(`/admin/kyc/${user.userId}`)}
                         className="inline-flex items-center space-x-1 px-3 py-1 rounded-lg bg-[#2C221E] hover:bg-[#3D2F2A] text-white font-semibold text-xs transition-colors min-h-[32px]"
@@ -234,6 +287,36 @@ export const VerificationQueueScreen: React.FC = () => {
                 ))}
               </tbody>
             </table>
+          </div>
+
+          {/* Pagination Footer */}
+          <div className="px-4 py-3 bg-[#F8F5EE] border-t border-[#EBE4D8] flex flex-col sm:flex-row sm:items-center justify-between gap-2 font-numeric text-xs text-[#665C54]">
+            <div>
+              Showing <strong className="text-[#2C221E]">{(safePage - 1) * PAGE_SIZE + 1}</strong>–
+              <strong className="text-[#2C221E]">{Math.min(safePage * PAGE_SIZE, filteredUsers.length)}</strong> of{' '}
+              <strong className="text-[#2C221E]">{filteredUsers.length}</strong> matching users
+            </div>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={safePage <= 1}
+                className="px-2.5 py-1 rounded-lg bg-[#FFFFFF] border border-[#EBE4D8] text-[#2C221E] font-bold disabled:opacity-40 hover:bg-[#F0EBE1] inline-flex items-center space-x-1"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                <span>Prev</span>
+              </button>
+              <span className="px-2 font-bold text-[#2C221E]">
+                Page {safePage} / {totalPages}
+              </span>
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={safePage >= totalPages}
+                className="px-2.5 py-1 rounded-lg bg-[#FFFFFF] border border-[#EBE4D8] text-[#2C221E] font-bold disabled:opacity-40 hover:bg-[#F0EBE1] inline-flex items-center space-x-1"
+              >
+                <span>Next</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         </div>
       )}

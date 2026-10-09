@@ -40,6 +40,7 @@ export const PostedZigsScreen: React.FC = () => {
 
   const completedCount = zigs.filter(z => z.status === 'COMPLETED').length;
   const activeCount = zigs.filter(z => z.status === 'POSTED' || z.status === 'ASSIGNED' || z.status === 'IN_PROGRESS').length;
+  const cancelledCount = zigs.filter(z => z.status === 'CANCELLED').length;
   const expiredCount = zigs.filter(z => z.status === 'EXPIRED').length;
   const totalPayoutSum = zigs.filter(z => z.status === 'COMPLETED').reduce((sum, z) => sum + (z.payout || 0), 0);
 
@@ -65,7 +66,9 @@ export const PostedZigsScreen: React.FC = () => {
             <Briefcase className="w-4 h-4 text-[#C69432]" />
           </div>
           <div className="text-xl font-extrabold text-[#2C221E] mt-1">{zigs.length}</div>
-          <div className="text-[11px] text-[#665C54] mt-0.5">{activeCount} Active / {completedCount} Completed / {expiredCount} Expired</div>
+          <div className="text-[11px] text-[#665C54] mt-0.5">
+            {activeCount} Active / {completedCount} Completed / {cancelledCount} Cancelled / {expiredCount} Expired
+          </div>
         </div>
 
         <div className="p-4 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
@@ -157,6 +160,9 @@ export const PostedZigsScreen: React.FC = () => {
                         </span>
                         <span className="text-[#665C54] truncate max-w-xs">{z.locationName}</span>
                       </div>
+                      <div className="text-[10px] text-[#8C827A] font-numeric mt-0.5">
+                        Posted: {formatDate(z.createdAt)}
+                      </div>
                     </td>
 
                     <td className="py-2.5 px-3 font-numeric">
@@ -226,6 +232,9 @@ export const PostedZigsScreen: React.FC = () => {
               <div>
                 <span className="text-[10px] font-numeric text-[#C69432] font-bold">ZIG ID: {selectedZig.id}</span>
                 <h3 className="text-base font-bold text-[#2C221E]">{selectedZig.title}</h3>
+                <p className="text-[11px] text-[#665C54] font-numeric mt-0.5">
+                  Posted: {formatDate(selectedZig.createdAt)}
+                </p>
               </div>
               <button
                 onClick={() => setSelectedZig(null)}
@@ -248,6 +257,19 @@ export const PostedZigsScreen: React.FC = () => {
                 <span className="text-[10px] text-[#665C54]">{selectedZig.assignedToPhone}</span>
               </div>
             </div>
+
+            {(selectedZig.startTime || selectedZig.endTime) && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-numeric">
+                <div className="p-2.5 rounded-xl bg-[#F8F5EE] border border-[#EBE4D8]">
+                  <span className="text-[10px] text-[#665C54] uppercase block">Shift Start (IST)</span>
+                  <span className="font-bold text-[#2C221E]">{formatDate(selectedZig.startTime)}</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-[#F8F5EE] border border-[#EBE4D8]">
+                  <span className="text-[10px] text-[#665C54] uppercase block">Shift End (IST)</span>
+                  <span className="font-bold text-[#2C221E]">{formatDate(selectedZig.endTime)}</span>
+                </div>
+              </div>
+            )}
 
             <div className="space-y-1 font-numeric">
               <span className="text-[11px] font-semibold text-[#665C54] uppercase block">Location & Description:</span>
