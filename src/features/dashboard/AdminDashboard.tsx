@@ -31,7 +31,12 @@ import {
   CheckCircle2,
   UserCheck,
   Building2,
-  Wallet
+  Wallet,
+  MapPin,
+  UserPlus,
+  ArrowUpRight,
+  Search,
+  Clock
 } from 'lucide-react';
 import { adminApi } from '../../lib/adminApi';
 import { AnalyticsMetricKey } from '../../types/admin';
@@ -54,6 +59,7 @@ const BRAND_COLORS = ['#C69432', '#2C221E', '#0F8B5F', '#2563EB', '#D97706', '#D
 export const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AnalyticsMetricKey>('overview');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [dailySearchQuery, setDailySearchQuery] = useState('');
   const queryClient = useQueryClient();
   const { success, error } = useToast();
 
@@ -142,11 +148,16 @@ export const AdminDashboard: React.FC = () => {
                 </button>
               </div>
 
-              {/* Platform Overview 6 Metric Cards */}
+              {/* Platform Overview 8 Metric Cards */}
               <div className="space-y-3">
-                <h3 className="text-sm font-bold text-[#2C221E]">Platform Overview</h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-[#2C221E]">Platform Overview & Staffing Operations</h3>
+                  <span className="text-[11px] text-[#C69432] font-numeric font-bold bg-[#F0EBE1] px-2 py-0.5 rounded border border-[#EBE4D8]">
+                    Live Supabase Metrics
+                  </span>
+                </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 font-numeric">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-3.5 font-numeric">
                   {/* TOTAL ZIGS */}
                   <div className="p-4 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] flex items-start justify-between min-h-[105px]">
                     <div>
@@ -157,7 +168,7 @@ export const AdminDashboard: React.FC = () => {
                         {snapshot?.metricValue?.total_zigs ?? 0}
                       </div>
                       <div className="text-[10px] text-[#665C54] mt-1 font-medium">
-                        Today: {snapshot?.metricValue?.today_zigs ?? 0} | Week: {snapshot?.metricValue?.week_zigs ?? 0}
+                        Today: <strong className="text-[#2C221E]">{snapshot?.metricValue?.today_zigs ?? 0}</strong> | Week: <strong className="text-[#2C221E]">{snapshot?.metricValue?.week_zigs ?? 0}</strong>
                       </div>
                     </div>
                     <div className="w-9 h-9 rounded-full bg-[#E0F2FE] flex items-center justify-center text-[#0284C7] shrink-0">
@@ -171,8 +182,11 @@ export const AdminDashboard: React.FC = () => {
                       <span className="text-[11px] font-bold text-[#665C54] uppercase tracking-wider block">
                         ACTIVE ZIGS
                       </span>
-                      <div className="text-2xl font-black text-[#2C221E] mt-2">
+                      <div className="text-2xl font-black text-[#D97706] mt-2">
                         {snapshot?.metricValue?.active_zigs ?? snapshot?.metricValue?.activeZigs ?? 0}
+                      </div>
+                      <div className="text-[10px] text-[#665C54] mt-1 font-medium">
+                        Live shifts & open listings
                       </div>
                     </div>
                     <div className="w-9 h-9 rounded-full bg-[#FEF3C7] flex items-center justify-center text-[#D97706] shrink-0">
@@ -184,10 +198,13 @@ export const AdminDashboard: React.FC = () => {
                   <div className="p-4 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] flex items-start justify-between min-h-[105px]">
                     <div>
                       <span className="text-[11px] font-bold text-[#665C54] uppercase tracking-wider block">
-                        COMPLETED
+                        COMPLETED ZIGS
                       </span>
-                      <div className="text-2xl font-black text-[#2C221E] mt-2">
+                      <div className="text-2xl font-black text-[#16A34A] mt-2">
                         {snapshot?.metricValue?.completed_zigs ?? snapshot?.metricValue?.completedZigs ?? 0}
+                      </div>
+                      <div className="text-[10px] text-[#665C54] mt-1 font-medium">
+                        Fulfillment: <strong className="text-[#16A34A]">{snapshot?.metricValue?.fulfillmentRate ?? 0}%</strong>
                       </div>
                     </div>
                     <div className="w-9 h-9 rounded-full bg-[#DCFCE7] flex items-center justify-center text-[#16A34A] shrink-0">
@@ -214,17 +231,77 @@ export const AdminDashboard: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* TODAY'S SIGNUPS (IST) */}
+                  <div className="p-4 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] flex items-start justify-between min-h-[105px]">
+                    <div>
+                      <span className="text-[11px] font-bold text-[#665C54] uppercase tracking-wider block">
+                        TODAY'S SIGNUPS (IST)
+                      </span>
+                      <div className="text-2xl font-black text-[#0F8B5F] mt-2">
+                        +{snapshot?.metricValue?.today_signups ?? 0}
+                      </div>
+                      <div className="text-[10px] text-[#0F8B5F] mt-1 font-semibold flex items-center">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#0F8B5F] animate-ping mr-1" />
+                        Real-time IST Onboarding
+                      </div>
+                    </div>
+                    <div className="w-9 h-9 rounded-full bg-[#DCFCE7] flex items-center justify-center text-[#0F8B5F] shrink-0">
+                      <UserPlus className="w-4 h-4 stroke-[2.5]" />
+                    </div>
+                  </div>
+
+                  {/* CANDIDATE APPLICATIONS */}
+                  <div className="p-4 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] flex items-start justify-between min-h-[105px]">
+                    <div>
+                      <span className="text-[11px] font-bold text-[#665C54] uppercase tracking-wider block">
+                        CANDIDATE APPLICATIONS
+                      </span>
+                      <div className="text-2xl font-black text-[#2C221E] mt-2 flex items-baseline space-x-1">
+                        <span>{snapshot?.metricValue?.total_applications ?? 0}</span>
+                        <span className="text-xs font-semibold text-[#665C54]">Applied</span>
+                      </div>
+                      <div className="text-[10px] text-[#665C54] mt-1 font-medium">
+                        Pending: <strong className="text-[#D97706]">{snapshot?.metricValue?.pending_applications ?? 0}</strong> | Hired: <strong className="text-[#16A34A]">{snapshot?.metricValue?.accepted_applications ?? 0}</strong>
+                      </div>
+                    </div>
+                    <div className="w-9 h-9 rounded-full bg-[#FEF3C7] flex items-center justify-center text-[#B45309] shrink-0">
+                      <Users className="w-4 h-4 stroke-[2.5]" />
+                    </div>
+                  </div>
+
+                  {/* STAFFING DEMAND */}
+                  <div className="p-4 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] flex items-start justify-between min-h-[105px]">
+                    <div>
+                      <span className="text-[11px] font-bold text-[#665C54] uppercase tracking-wider block">
+                        STAFFING DEMAND
+                      </span>
+                      <div className="text-2xl font-black text-[#2C221E] mt-2">
+                        {snapshot?.metricValue?.total_workers_assigned ?? 0} <span className="text-sm font-normal text-[#665C54]">/ {snapshot?.metricValue?.total_workers_requested ?? 0}</span>
+                      </div>
+                      <div className="text-[10px] text-[#665C54] mt-1 font-medium">
+                        Fill rate: <strong className="text-[#2563EB]">
+                          {snapshot?.metricValue?.total_workers_requested > 0 
+                            ? ((snapshot?.metricValue?.total_workers_assigned / snapshot?.metricValue?.total_workers_requested) * 100).toFixed(0) 
+                            : 0}%
+                        </strong>
+                      </div>
+                    </div>
+                    <div className="w-9 h-9 rounded-full bg-[#DBEAFE] flex items-center justify-center text-[#1D4ED8] shrink-0">
+                      <Layers className="w-4 h-4 stroke-[2.5]" />
+                    </div>
+                  </div>
+
                   {/* GMV (GROSS VOLUME) */}
                   <div className="p-4 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] flex items-start justify-between min-h-[105px]">
                     <div>
                       <span className="text-[11px] font-bold text-[#665C54] uppercase tracking-wider block">
-                        GMV (GROSS VOLUME)
+                        TOTAL GMV (INR)
                       </span>
                       <div className="text-2xl font-black text-[#2C221E] mt-2">
                         {formatCurrency(snapshot?.metricValue?.total_gmv ?? snapshot?.metricValue?.gmv ?? 0)}
                       </div>
                       <div className="text-[10px] text-[#665C54] mt-1 font-medium">
-                        Revenue: {formatCurrency(snapshot?.metricValue?.platform_revenue ?? snapshot?.metricValue?.totalRevenue ?? 0)}
+                        Platform cut: <strong className="text-[#16A34A]">{formatCurrency(snapshot?.metricValue?.platform_revenue ?? snapshot?.metricValue?.totalRevenue ?? 0)}</strong>
                       </div>
                     </div>
                     <div className="w-9 h-9 rounded-full bg-[#FCE7F3] flex items-center justify-center text-[#DB2777] shrink-0 font-extrabold text-base">
@@ -267,6 +344,80 @@ export const AdminDashboard: React.FC = () => {
                   ))}
                   {(!snapshot?.metricValue?.work_categories || snapshot?.metricValue?.work_categories.length === 0) && (
                     <p className="text-xs text-[#665C54] py-4 text-center">No work categories posted yet.</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Hot Zigs & Applicant Demand */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <h3 className="text-sm font-bold text-[#2C221E]">Hot Zigs & Candidate Demand</h3>
+                    <span className="text-[10px] bg-[#FEF3C7] text-[#B45309] font-bold px-2 py-0.5 rounded-full border border-[#FDE68A]">
+                      Top Applicant Inflow
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-[#665C54]">
+                    Sorted by candidate applications
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 font-numeric">
+                  {(snapshot?.metricValue?.hot_zigs || []).map((hz: any) => (
+                    <div
+                      key={hz.id}
+                      className="p-4 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] flex flex-col justify-between hover:border-[#C69432] transition-colors"
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-[#C69432] bg-[#FDF8EE] px-2 py-0.5 rounded-md border border-[#F5E6CC]">
+                            {hz.category}
+                          </span>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            hz.status === 'COMPLETED' ? 'bg-[#DCFCE7] text-[#16A34A]' :
+                            hz.status === 'CANCELLED' ? 'bg-[#FEE2E2] text-[#DC2626]' :
+                            'bg-[#FEF3C7] text-[#D97706]'
+                          }`}>
+                            {hz.status}
+                          </span>
+                        </div>
+
+                        <h4 className="text-sm font-bold text-[#2C221E] mt-2 line-clamp-1">
+                          {hz.title}
+                        </h4>
+
+                        <div className="flex items-center text-[11px] text-[#665C54] mt-1 space-x-1">
+                          <MapPin className="w-3 h-3 text-[#8C827A] shrink-0" />
+                          <span className="truncate">{hz.location}</span>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 pt-3 border-t border-[#EBE4D8] space-y-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-[#665C54] font-medium">Payout</span>
+                          <span className="font-bold text-[#2C221E]">{formatCurrency(hz.payout)}</span>
+                        </div>
+
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-[#665C54] font-medium">Staffing</span>
+                          <span className="font-bold text-[#2C221E]">
+                            {hz.workersAssigned} / {hz.workersRequired} workers
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between bg-[#F0EBE1] px-2.5 py-1.5 rounded-xl border border-[#EBE4D8]">
+                          <span className="text-[11px] font-bold text-[#2C221E]">Applications</span>
+                          <span className="text-xs font-black text-[#B45309]">
+                            {hz.applicantCount} candidates applied
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {(!snapshot?.metricValue?.hot_zigs || snapshot?.metricValue?.hot_zigs.length === 0) && (
+                    <div className="col-span-full p-4 rounded-xl bg-white border border-[#EBE4D8] text-center text-xs text-[#665C54]">
+                      No active zigs with applications recorded.
+                    </div>
                   )}
                 </div>
               </div>
@@ -603,44 +754,295 @@ export const AdminDashboard: React.FC = () => {
           )}
 
           {/* TAB 8: GROWTH VELOCITY */}
-          {activeTab === 'growth_trends' && (
-            <div className="space-y-4 sm:space-y-5 min-w-0 w-full">
-              <div className="p-4 sm:p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] space-y-3 min-w-0 w-full overflow-hidden">
-                <h3 className="text-sm font-bold text-[#2C221E]">Daily User Signups (Last 30 Days)</h3>
-                <div className="h-64 sm:h-72 w-full min-w-0">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={Array.isArray(snapshot?.metricValue) ? snapshot.metricValue : []}>
-                      <defs>
-                        <linearGradient id="colorSignups" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#C69432" stopOpacity={0.4} />
-                          <stop offset="95%" stopColor="#C69432" stopOpacity={0.0} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#EBE4D8" />
-                      <XAxis dataKey="month" stroke="#665C54" tick={{ fontSize: 10 }} angle={-30} textAnchor="end" height={60} />
-                      <YAxis stroke="#665C54" tick={{ fontSize: 10 }} />
-                      <Tooltip contentStyle={{ backgroundColor: '#FFFFFF', borderColor: '#EBE4D8', borderRadius: '12px' }} />
-                      <Area type="monotone" dataKey="userSignups" stroke="#C69432" strokeWidth={2.5} fillOpacity={1} fill="url(#colorSignups)" name="New Signups" />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-              <div className="p-4 sm:p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] min-w-0 w-full overflow-hidden">
-                <h3 className="text-sm font-bold text-[#2C221E] mb-3">Signup Log</h3>
-                <div className="divide-y divide-[#EBE4D8] font-numeric max-h-80 overflow-y-auto">
-                  {(Array.isArray(snapshot?.metricValue) ? snapshot.metricValue : []).map((day: any, i: number) => (
-                    <div key={i} className="py-2.5 flex items-center justify-between">
-                      <span className="font-semibold text-[#2C221E] text-xs">{day.month}</span>
-                      <span className="text-xs font-bold text-[#0F8B5F] shrink-0">+{day.userSignups} users</span>
+          {activeTab === 'growth_trends' && (() => {
+            const growthData: any[] = Array.isArray(snapshot?.metricValue)
+              ? snapshot.metricValue
+              : (snapshot?.metricValue?.dailyTrends || []);
+            const summary = (snapshot?.metricValue as any)?.summary || {
+              todaySignups: 0,
+              yesterdaySignups: 0,
+              last7DaysTotal: 0,
+              last7DaysAvg: 0,
+              last30DaysTotal: 0,
+              totalApplications30d: 0,
+              todayApplications: 0,
+              peakDay: { date: 'N/A', count: 0 },
+            };
+
+            const filteredLedger = growthData.filter((d: any) => {
+              if (!dailySearchQuery.trim()) return true;
+              const q = dailySearchQuery.toLowerCase().trim();
+              return (
+                (d.month && d.month.toLowerCase().includes(q)) ||
+                (d.dateKey && d.dateKey.toLowerCase().includes(q))
+              );
+            });
+
+            return (
+              <div className="space-y-5 sm:space-y-6 min-w-0 w-full">
+                {/* 4 Executive Growth KPI Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-3.5 font-numeric">
+                  {/* Card 1: Today's Signups (IST) */}
+                  <div className="p-4 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] flex items-start justify-between min-h-[105px]">
+                    <div>
+                      <span className="text-[11px] font-bold text-[#665C54] uppercase tracking-wider block">
+                        TODAY'S SIGNUPS (IST)
+                      </span>
+                      <div className="text-2xl font-black text-[#0F8B5F] mt-2">
+                        +{summary.todaySignups ?? 0}
+                      </div>
+                      <div className="text-[10px] text-[#665C54] mt-1 font-medium">
+                        Yesterday: <strong className="text-[#2C221E]">+{summary.yesterdaySignups ?? 0}</strong>
+                        {summary.todaySignups > summary.yesterdaySignups ? (
+                          <span className="text-[#0F8B5F] font-bold ml-1.5">
+                            (+{summary.todaySignups - summary.yesterdaySignups} pace)
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
-                  ))}
-                  {(Array.isArray(snapshot?.metricValue) ? snapshot.metricValue : []).length === 0 && (
-                    <p className="text-xs text-[#665C54] py-4 text-center">No signups in the last 30 days.</p>
-                  )}
+                    <div className="w-9 h-9 rounded-full bg-[#DCFCE7] flex items-center justify-center text-[#0F8B5F] shrink-0">
+                      <UserPlus className="w-4 h-4 stroke-[2.5]" />
+                    </div>
+                  </div>
+
+                  {/* Card 2: 7-Day Velocity Run-rate */}
+                  <div className="p-4 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] flex items-start justify-between min-h-[105px]">
+                    <div>
+                      <span className="text-[11px] font-bold text-[#665C54] uppercase tracking-wider block">
+                        7-DAY RUN-RATE
+                      </span>
+                      <div className="text-2xl font-black text-[#D97706] mt-2">
+                        +{summary.last7DaysTotal ?? 0}
+                      </div>
+                      <div className="text-[10px] text-[#665C54] mt-1 font-medium">
+                        Avg: <strong className="text-[#2C221E]">~{summary.last7DaysAvg ?? 0}/day</strong> onboarding rate
+                      </div>
+                    </div>
+                    <div className="w-9 h-9 rounded-full bg-[#FEF3C7] flex items-center justify-center text-[#D97706] shrink-0">
+                      <TrendingUp className="w-4 h-4 stroke-[2.5]" />
+                    </div>
+                  </div>
+
+                  {/* Card 3: 30-Day Total Onboarding */}
+                  <div className="p-4 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] flex items-start justify-between min-h-[105px]">
+                    <div>
+                      <span className="text-[11px] font-bold text-[#665C54] uppercase tracking-wider block">
+                        30-DAY SIGNUPS TOTAL
+                      </span>
+                      <div className="text-2xl font-black text-[#2C221E] mt-2">
+                        +{summary.last30DaysTotal ?? 0}
+                      </div>
+                      <div className="text-[10px] text-[#665C54] mt-1 font-medium">
+                        Peak: <strong className="text-[#2C221E]">{summary.peakDay?.date || 'N/A'}</strong> ({summary.peakDay?.count || 0} users)
+                      </div>
+                    </div>
+                    <div className="w-9 h-9 rounded-full bg-[#DBEAFE] flex items-center justify-center text-[#2563EB] shrink-0">
+                      <Users className="w-4 h-4 stroke-[2.5]" />
+                    </div>
+                  </div>
+
+                  {/* Card 4: 30-Day Job Applications */}
+                  <div className="p-4 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] flex items-start justify-between min-h-[105px]">
+                    <div>
+                      <span className="text-[11px] font-bold text-[#665C54] uppercase tracking-wider block">
+                        CANDIDATE APPLICATIONS
+                      </span>
+                      <div className="text-2xl font-black text-[#2C221E] mt-2 flex items-baseline space-x-1">
+                        <span>{summary.totalApplications30d ?? 0}</span>
+                        <span className="text-xs font-semibold text-[#665C54]">Applied (30d)</span>
+                      </div>
+                      <div className="text-[10px] text-[#665C54] mt-1 font-medium">
+                        Today: <strong className="text-[#0F8B5F]">+{summary.todayApplications ?? 0} applications</strong>
+                      </div>
+                    </div>
+                    <div className="w-9 h-9 rounded-full bg-[#F3E8FF] flex items-center justify-center text-[#7C3AED] shrink-0">
+                      <Briefcase className="w-4 h-4 stroke-[2.5]" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Main 30-Day Growth Velocity AreaChart */}
+                <div className="p-4 sm:p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] space-y-4 min-w-0 w-full overflow-hidden">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-bold text-[#2C221E]">
+                        30-Day Daily User Signups & Job Applications (IST Timezone)
+                      </h3>
+                      <p className="text-[11px] text-[#665C54] mt-0.5">
+                        Consecutive calendar days in Indian Standard Time (UTC+5:30)
+                      </p>
+                    </div>
+                    <div className="flex items-center space-x-2 self-start sm:self-auto font-numeric text-[11px]">
+                      <span className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-[#FDF8EE] border border-[#F5E6CC] text-[#C69432] font-bold">
+                        <span className="w-2 h-2 rounded-full bg-[#C69432]" />
+                        <span>Signups</span>
+                      </span>
+                      <span className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-[#DCFCE7] border border-[#BBF7D0] text-[#0F8B5F] font-bold">
+                        <span className="w-2 h-2 rounded-full bg-[#0F8B5F]" />
+                        <span>Applications</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="h-64 sm:h-72 w-full min-w-0">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={growthData}>
+                        <defs>
+                          <linearGradient id="colorGrowthSignups" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#C69432" stopOpacity={0.4} />
+                            <stop offset="95%" stopColor="#C69432" stopOpacity={0.0} />
+                          </linearGradient>
+                          <linearGradient id="colorGrowthApps" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#0F8B5F" stopOpacity={0.4} />
+                            <stop offset="95%" stopColor="#0F8B5F" stopOpacity={0.0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#EBE4D8" />
+                        <XAxis 
+                          dataKey="month" 
+                          stroke="#665C54" 
+                          tick={{ fontSize: 10 }} 
+                          angle={-30} 
+                          textAnchor="end" 
+                          height={55} 
+                        />
+                        <YAxis stroke="#665C54" tick={{ fontSize: 10 }} allowDecimals={false} />
+                        <Tooltip 
+                          contentStyle={{ 
+                            backgroundColor: '#FFFFFF', 
+                            borderColor: '#EBE4D8', 
+                            borderRadius: '12px', 
+                            color: '#2C221E',
+                            boxShadow: '0 4px 20px rgba(44,34,30,0.08)' 
+                          }}
+                          labelFormatter={(label, payload) => {
+                            const item = payload && payload[0]?.payload;
+                            return item ? `${item.month} (${item.dateKey})` : label;
+                          }}
+                        />
+                        <Area 
+                          type="monotone" 
+                          dataKey="userSignups" 
+                          stroke="#C69432" 
+                          strokeWidth={2.5} 
+                          fillOpacity={1} 
+                          fill="url(#colorGrowthSignups)" 
+                          name="New Signups" 
+                        />
+                        <Area 
+                          type="monotone" 
+                          dataKey="applicationsCount" 
+                          stroke="#0F8B5F" 
+                          strokeWidth={2} 
+                          fillOpacity={1} 
+                          fill="url(#colorGrowthApps)" 
+                          name="Job Applications" 
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* 30-Day Daily Velocity Ledger Table */}
+                <div className="p-4 sm:p-5 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] space-y-3 min-w-0 w-full overflow-hidden">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-bold text-[#2C221E]">
+                        Daily Velocity Ledger (IST Calendar Days)
+                      </h3>
+                      <p className="text-[11px] text-[#665C54] mt-0.5">
+                        Breakdown of daily user acquisitions, job applications, and task operations
+                      </p>
+                    </div>
+
+                    {/* Search / Filter Box */}
+                    <div className="relative w-full sm:w-64">
+                      <Search className="w-3.5 h-3.5 text-[#8C827A] absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={dailySearchQuery}
+                        onChange={(e) => setDailySearchQuery(e.target.value)}
+                        placeholder="Filter by date or month..."
+                        className="w-full bg-[#F0EBE1] border border-[#EBE4D8] rounded-xl pl-9 pr-3 py-1.5 text-xs text-[#2C221E] placeholder-[#8C827A] focus:outline-none focus:border-[#C69432] font-numeric"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto max-h-96 overflow-y-auto rounded-xl border border-[#EBE4D8]">
+                    <table className="w-full text-left text-xs font-numeric">
+                      <thead className="bg-[#F8F5EE] text-[#C69432] uppercase font-bold sticky top-0 z-10 border-b border-[#EBE4D8]">
+                        <tr>
+                          <th className="py-2.5 px-3">Date (IST)</th>
+                          <th className="py-2.5 px-3">New Signups</th>
+                          <th className="py-2.5 px-3">Candidate Applications</th>
+                          <th className="py-2.5 px-3">Zigs Posted</th>
+                          <th className="py-2.5 px-3">Zigs Completed</th>
+                          <th className="py-2.5 px-3 text-right">Day Activity</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#EBE4D8]">
+                        {[...filteredLedger].reverse().map((day: any) => {
+                          const totalDayActivity = (day.userSignups || 0) + (day.applicationsCount || 0) + (day.zigsPosted || 0);
+                          return (
+                            <tr key={day.dateKey} className="hover:bg-[#F0EBE1]/40 transition-colors">
+                              <td className="py-2.5 px-3">
+                                <div className="font-bold text-[#2C221E]">{day.month}</div>
+                                <div className="text-[10px] text-[#8C827A]">{day.dateKey}</div>
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-md font-bold text-xs ${
+                                  day.userSignups > 0 
+                                    ? 'bg-[#DCFCE7] text-[#0F8B5F] border border-[#BBF7D0]' 
+                                    : 'text-[#8C827A]'
+                                }`}>
+                                  +{day.userSignups}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-md font-bold text-xs ${
+                                  day.applicationsCount > 0 
+                                    ? 'bg-[#FEF3C7] text-[#B45309] border border-[#FDE68A]' 
+                                    : 'text-[#8C827A]'
+                                }`}>
+                                  {day.applicationsCount} applied
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 text-[#2C221E] font-medium">
+                                {day.zigsPosted > 0 ? (
+                                  <span className="font-bold text-[#2563EB]">+{day.zigsPosted} zigs</span>
+                                ) : (
+                                  <span className="text-[#8C827A]">0</span>
+                                )}
+                              </td>
+                              <td className="py-2.5 px-3 text-[#2C221E] font-medium">
+                                {day.zigsCompleted > 0 ? (
+                                  <span className="font-bold text-[#16A34A]">{day.zigsCompleted} done</span>
+                                ) : (
+                                  <span className="text-[#8C827A]">0</span>
+                                )}
+                              </td>
+                              <td className="py-2.5 px-3 text-right">
+                                <span className="text-[11px] font-bold text-[#665C54]">
+                                  {totalDayActivity > 0 ? `${totalDayActivity} events` : 'Idle'}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {filteredLedger.length === 0 && (
+                          <tr>
+                            <td colSpan={6} className="py-6 text-center text-xs text-[#8C827A]">
+                              No daily ledger records match "{dailySearchQuery}".
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
       )}
     </div>

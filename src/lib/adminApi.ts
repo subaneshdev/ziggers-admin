@@ -17,7 +17,8 @@ import {
   RoleType,
   ReferralRecord,
   SupportTicketRecord,
-  PostedZigRecord
+  PostedZigRecord,
+  TaskApplicantRecord
 } from '../types/admin';
 
 // ============================================================================
@@ -871,15 +872,17 @@ export const adminApi = {
 
   // --- 10. Analytics Engine (100% LIVE from Supabase tables — ALL profiles paginated, tasks, disputes) ---
   async fetchAnalytics(metricKey: AnalyticsMetricKey): Promise<AnalyticsSnapshot> {
-    const [snapshotRes, tasksRes, profilesRes, disputesRes] = await Promise.all([
+    const [snapshotRes, tasksRes, appsRes, profilesRes, disputesRes, walletTxRes] = await Promise.all([
       supabase
         .from('admin_analytics_snapshot')
         .select('computed_at, metric_value')
         .eq('metric_key', metricKey)
         .maybeSingle(),
       supabase.from('tasks').select('*').order('created_at', { ascending: false }).range(0, 9999),
+      supabase.from('task_applications').select('*').order('created_at', { ascending: false }).range(0, 9999),
       fetchAllProfilesRows(),
       supabase.from('disputes').select('*').range(0, 9999),
+      supabase.from('wallet_transactions').select('*').order('created_at', { ascending: false }).range(0, 9999),
     ]);
 
     const snapshotRow = snapshotRes.data;
@@ -888,7 +891,9 @@ export const adminApi = {
 
     const allProfiles = profilesRes.rows || [];
     const allTasks = tasksRes.data || [];
+    const allApps = appsRes.data || [];
     const allDisputes = disputesRes.data || [];
+    const allWalletTx = walletTxRes.data || [];
 
     // Live counts across ALL profiles in Supabase (no 1000-row truncation)
     const totalUsers = allProfiles.length;
@@ -1023,6 +1028,38 @@ export const adminApi = {
       trend: `+${stats.count}`
     }));
 
+    // Applications and staffing aggregates
+    const appCountByTaskId = new Map<string, number>();
+    allApps.forEach(a => {
+      appCountByTaskId.set(a.task_id, (appCountByTaskId.get(a.task_id) || 0) + 1);
+    });
+
+    const totalWorkersRequested = allTasks.reduce((acc, t) => acc + (Number(t.workers_required) || 1), 0);
+    const totalWorkersAssigned = allTasks.reduce((acc, t) => acc + (Number(t.workers_assigned) || (t.assigned_to ? 1 : 0)), 0);
+    const totalApplications = allApps.length;
+    const pendingApplications = allApps.filter(a => String(a.status || '').toLowerCase() === 'pending').length;
+    const acceptedApplications = allApps.filter(a => String(a.status || '').toLowerCase() === 'accepted').length;
+    const cancelledApplications = allApps.filter(a => String(a.status || '').toLowerCase() === 'cancelled').length;
+    const todaySignupsCount = allProfiles.filter(p => p.created_at && getISTDateKey(p.created_at) === nowIstDateKey).length;
+    const todayApplicationsCount = allApps.filter(a => a.created_at && getISTDateKey(a.created_at) === nowIstDateKey).length;
+    const totalWalletTxCount = allWalletTx.length;
+    const totalWalletVolume = allWalletTx.reduce((acc, tx) => acc + (Number(tx.amount) || 0), 0);
+
+    const hotZigs = allTasks
+      .map(t => ({
+        id: t.id,
+        title: t.title || 'Untitled Zig',
+        category: t.category || 'General',
+        location: t.location_name || t.location || 'Location Not Specified',
+        payout: Number(t.payout) || 0,
+        status: deriveTaskStatus(t),
+        workersRequired: Number(t.workers_required) || 1,
+        workersAssigned: Number(t.workers_assigned) || (t.assigned_to ? 1 : 0),
+        applicantCount: appCountByTaskId.get(t.id) || 0,
+      }))
+      .sort((a, b) => b.applicantCount - a.applicantCount)
+      .slice(0, 6);
+
     if (metricKey === 'overview') {
       normalizedData = {
         gmv: liveGmv,
@@ -1049,6 +1086,17 @@ export const adminApi = {
         totalUsers: totalUsers,
         registered_users: totalUsers,
         openDisputes: openDisputesCount,
+        total_applications: totalApplications,
+        pending_applications: pendingApplications,
+        accepted_applications: acceptedApplications,
+        cancelled_applications: cancelledApplications,
+        total_workers_requested: totalWorkersRequested,
+        total_workers_assigned: totalWorkersAssigned,
+        today_signups: todaySignupsCount,
+        today_applications: todayApplicationsCount,
+        wallet_transactions_count: totalWalletTxCount,
+        wallet_transactions_volume: totalWalletVolume,
+        hot_zigs: hotZigs,
         gmvGrowthMoM: 0,
         revenueGrowthMoM: 0,
         gmvHistory,
@@ -1106,7 +1154,10 @@ export const adminApi = {
         fulfillmentRate,
         completedZigs: completedCount,
         activeZigs: activeCount,
-        cancelled_zigs: cancelledCount + expiredCount
+        cancelled_zigs: cancelledCount + expiredCount,
+        total_applications: totalApplications,
+        total_workers_requested: totalWorkersRequested,
+        total_workers_assigned: totalWorkersAssigned
       };
     } else if (metricKey === 'trust_safety') {
       normalizedData = {
@@ -1120,34 +1171,85 @@ export const adminApi = {
         cancelled_zigs: cancelledCount
       };
     } else if (metricKey === 'growth_trends') {
-      // Live signups and completions grouped strictly by IST (Asia/Kolkata) date
-      const dailyData: Record<string, { userSignups: number; zigsCompleted: number }> = {};
-      const thirtyDaysAgoMs = todayStartIstMs - 30 * 24 * 60 * 60 * 1000;
-      allProfiles
-        .filter(p => p.created_at && new Date(p.created_at).getTime() >= thirtyDaysAgoMs)
-        .forEach(p => {
-          const day = getISTDateKey(p.created_at);
-          if (!day) return;
-          if (!dailyData[day]) dailyData[day] = { userSignups: 0, zigsCompleted: 0 };
-          dailyData[day].userSignups++;
-        });
-      allTasks
-        .filter(t => t.created_at && new Date(t.created_at).getTime() >= thirtyDaysAgoMs)
-        .forEach(t => {
-          const day = getISTDateKey(t.created_at);
-          if (!day) return;
-          if (!dailyData[day]) dailyData[day] = { userSignups: 0, zigsCompleted: 0 };
-          if (deriveTaskStatus(t) === 'COMPLETED') {
-            dailyData[day].zigsCompleted++;
-          }
-        });
-      normalizedData = Object.entries(dailyData)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([month, stats]) => ({
-          month,
+      // 100% Deterministic 30 Consecutive Calendar Days in IST (Asia/Kolkata)
+      const dailyDataMap: Record<string, { userSignups: number; applicationsCount: number; zigsCompleted: number; zigsPosted: number }> = {};
+      const daysList: string[] = [];
+      for (let i = 29; i >= 0; i--) {
+        const d = new Date(todayStartIstMs - i * 24 * 60 * 60 * 1000 + 4 * 60 * 60 * 1000);
+        const key = getISTDateKey(d);
+        if (key && !dailyDataMap[key]) {
+          dailyDataMap[key] = { userSignups: 0, applicationsCount: 0, zigsCompleted: 0, zigsPosted: 0 };
+          daysList.push(key);
+        }
+      }
+
+      allProfiles.forEach(p => {
+        if (!p.created_at) return;
+        const k = getISTDateKey(p.created_at);
+        if (dailyDataMap[k]) dailyDataMap[k].userSignups++;
+      });
+
+      allApps.forEach(a => {
+        if (!a.created_at) return;
+        const k = getISTDateKey(a.created_at);
+        if (dailyDataMap[k]) dailyDataMap[k].applicationsCount++;
+      });
+
+      allTasks.forEach(t => {
+        if (!t.created_at) return;
+        const k = getISTDateKey(t.created_at);
+        if (dailyDataMap[k]) {
+          dailyDataMap[k].zigsPosted++;
+          if (deriveTaskStatus(t) === 'COMPLETED') dailyDataMap[k].zigsCompleted++;
+        }
+      });
+
+      const monthShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const trendsList = daysList.map(dayKey => {
+        const stats = dailyDataMap[dayKey] || { userSignups: 0, applicationsCount: 0, zigsPosted: 0, zigsCompleted: 0 };
+        const [, mStr, dStr] = dayKey.split('-');
+        const formattedMonth = `${Number(dStr)} ${monthShort[Number(mStr) - 1]}`;
+        return {
+          dateKey: dayKey,
+          month: formattedMonth, // Clean chart label: "13 Oct", "12 Oct"
+          fullDate: dayKey,
           userSignups: stats.userSignups,
-          zigsCompleted: stats.zigsCompleted
-        }));
+          applicationsCount: stats.applicationsCount,
+          zigsPosted: stats.zigsPosted,
+          zigsCompleted: stats.zigsCompleted,
+        };
+      });
+
+      const todayKey = getISTDateKey(new Date());
+      const yesterdayKey = getISTDateKey(new Date(todayStartIstMs - 24 * 60 * 60 * 1000 + 4 * 60 * 60 * 1000));
+      const todaySignups = dailyDataMap[todayKey]?.userSignups || 0;
+      const yesterdaySignups = dailyDataMap[yesterdayKey]?.userSignups || 0;
+      const last7DaysSignups = trendsList.slice(-7).reduce((acc, d) => acc + d.userSignups, 0);
+      const last7DaysAvg = Math.round(last7DaysSignups / 7);
+      const last30DaysTotal = trendsList.reduce((acc, d) => acc + d.userSignups, 0);
+      const totalApplications30d = trendsList.reduce((acc, d) => acc + d.applicationsCount, 0);
+      const todayApplications = dailyDataMap[todayKey]?.applicationsCount || 0;
+
+      let peakDay = trendsList[0];
+      for (const d of trendsList) {
+        if (d.userSignups > (peakDay?.userSignups || 0)) {
+          peakDay = d;
+        }
+      }
+
+      normalizedData = Object.assign([...trendsList], {
+        dailyTrends: trendsList,
+        summary: {
+          todaySignups,
+          yesterdaySignups,
+          last7DaysTotal: last7DaysSignups,
+          last7DaysAvg,
+          last30DaysTotal,
+          totalApplications30d,
+          todayApplications,
+          peakDay: peakDay ? { date: peakDay.month, count: peakDay.userSignups } : { date: 'N/A', count: 0 },
+        }
+      });
     } else if (metricKey === 'geographic') {
       // Live from tasks location_name
       const locationCounts: Record<string, number> = {};
@@ -1314,15 +1416,46 @@ export const adminApi = {
 
   // --- 14. Posted Zigs & Task Management (100% Real Database Queries) ---
   async fetchPostedZigsList(): Promise<PostedZigRecord[]> {
-    const { data: tasks, error } = await supabase
-      .from('tasks')
-      .select('*')
-      .order('created_at', { ascending: false });
+    const [tasksRes, appsRes, profilesRes] = await Promise.all([
+      supabase.from('tasks').select('*').order('created_at', { ascending: false }),
+      supabase.from('task_applications').select('*').order('created_at', { ascending: false }),
+      fetchAllProfilesRows(),
+    ]);
 
-    const { rows: profiles } = await fetchAllProfilesRows();
-    const profileMap = new Map((profiles || []).map(p => [p.id, p]));
+    const tasks = tasksRes.data;
+    const apps = appsRes.data || [];
+    const profiles = profilesRes.rows || [];
+    const profileMap = new Map(profiles.map(p => [p.id, p]));
 
-    if (!error && tasks && tasks.length > 0) {
+    // Map applications by task_id with complete worker details
+    const taskApplicationsMap = new Map<string, TaskApplicantRecord[]>();
+    apps.forEach(a => {
+      if (!taskApplicationsMap.has(a.task_id)) {
+        taskApplicationsMap.set(a.task_id, []);
+      }
+      const w = profileMap.get(a.worker_id);
+      const wNorm = w ? normalizeProfileRow(w) : null;
+      taskApplicationsMap.get(a.task_id)!.push({
+        id: a.id,
+        taskId: a.task_id,
+        workerId: a.worker_id,
+        workerName: wNorm?.workerName || wNorm?.fullName || wNorm?.name || (a.worker_id ? `Worker (${a.worker_id.slice(0, 8)})` : 'Candidate'),
+        workerPhone: wNorm?.phone || (w?.mobile && !w.mobile.startsWith('DELETED') ? w.mobile : 'Not Provided'),
+        workerAvatar: w?.profile_photo_url || undefined,
+        trustScore: Number(w?.trust_score ?? 100),
+        rating: Number(w?.rating ?? 5),
+        kycStatus: w?.kyc_status ? String(w.kyc_status).toUpperCase() : 'PENDING',
+        status: String(a.status || 'pending').toLowerCase(),
+        createdAt: a.created_at || '',
+        bidAmount: a.bid_amount ? Number(a.bid_amount) : null,
+        pitchMessage: a.pitch_message || null,
+        checkInPhoto: a.check_in_photo || null,
+        checkOutPhoto: a.check_out_photo || null,
+        completedAt: a.completed_at || null,
+      });
+    });
+
+    if (!tasksRes.error && tasks && tasks.length > 0) {
       return tasks.map(t => {
         const creator = profileMap.get(t.created_by);
         const assignee = t.assigned_to ? profileMap.get(t.assigned_to) : undefined;
@@ -1342,6 +1475,11 @@ export const adminApi = {
         const assigneeDisplayName = t.assigned_to
           ? (assigneeNorm?.workerName || assigneeNorm?.fullName || assigneeNorm?.name || `Worker (${t.assigned_to.slice(0, 8)})`)
           : 'Unassigned';
+
+        const taskApps = taskApplicationsMap.get(t.id) || [];
+        const workersRequired = Number(t.workers_required) || 1;
+        const workersAssigned = Number(t.workers_assigned) || (t.assigned_to ? 1 : 0);
+        const applicationCount = taskApps.length || Number(t.application_count) || Number(t.applicant_count) || 0;
 
         return {
           id: t.id,
@@ -1363,8 +1501,10 @@ export const adminApi = {
           checkOutPhoto: t.check_out_photo || t.check_out_photo_url,
           proofPhotoUrl: t.proof_photo_url,
           coverPhotoUrl: t.cover_photo_url,
-          workersRequired: t.workers_required || 1,
-          workersAssigned: t.workers_assigned || (t.assigned_to ? 1 : 0),
+          workersRequired,
+          workersAssigned,
+          applicationCount,
+          applications: taskApps,
           startTime: t.start_time,
           endTime: t.end_time,
           createdAt: t.created_at || '',

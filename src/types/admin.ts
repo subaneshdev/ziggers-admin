@@ -275,6 +275,25 @@ export interface SupportTicketRecord {
   updatedAt?: string;
 }
 
+export interface TaskApplicantRecord {
+  id: string;
+  taskId: string;
+  workerId: string;
+  workerName: string;
+  workerPhone: string;
+  workerAvatar?: string;
+  trustScore: number;
+  rating: number;
+  kycStatus: string;
+  status: string; // 'pending' | 'accepted' | 'rejected' | 'cancelled'
+  createdAt: string;
+  bidAmount?: number | null;
+  pitchMessage?: string | null;
+  checkInPhoto?: string | null;
+  checkOutPhoto?: string | null;
+  completedAt?: string | null;
+}
+
 export interface PostedZigRecord {
   id: string;
   title: string;
@@ -296,7 +315,9 @@ export interface PostedZigRecord {
   proofPhotoUrl?: string;
   coverPhotoUrl?: string;
   workersRequired: number;
-  workersAssigned?: number;
+  workersAssigned: number;
+  applicationCount: number;
+  applications: TaskApplicantRecord[];
   startTime?: string;
   endTime?: string;
   createdAt: string;
