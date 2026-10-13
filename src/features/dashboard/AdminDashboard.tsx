@@ -36,7 +36,12 @@ import {
   UserPlus,
   ArrowUpRight,
   Search,
-  Clock
+  Clock,
+  X,
+  Copy,
+  Check,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { adminApi } from '../../lib/adminApi';
 import { AnalyticsMetricKey } from '../../types/admin';
@@ -60,8 +65,20 @@ export const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AnalyticsMetricKey>('overview');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [dailySearchQuery, setDailySearchQuery] = useState('');
+  const [selectedDayRecord, setSelectedDayRecord] = useState<any | null>(null);
+  const [selectedTimeSlotKey, setSelectedTimeSlotKey] = useState<string>('ALL');
+  const [timeSlotSearch, setTimeSlotSearch] = useState<string>('');
+  const [dayModalTab, setDayModalTab] = useState<'USERS' | 'APPLICATIONS'>('USERS');
+  const [copiedUserPhone, setCopiedUserPhone] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const { success, error } = useToast();
+
+  const handleCopyUserPhone = (phone: string) => {
+    navigator.clipboard.writeText(phone);
+    setCopiedUserPhone(phone);
+    success('Copied', `Phone number ${phone} copied to clipboard.`);
+    setTimeout(() => setCopiedUserPhone(null), 2000);
+  };
 
   const { data: snapshot, isLoading } = useQuery({
     queryKey: ['analytics', activeTab],
@@ -869,7 +886,7 @@ export const AdminDashboard: React.FC = () => {
                         30-Day Daily User Signups & Job Applications (IST Timezone)
                       </h3>
                       <p className="text-[11px] text-[#665C54] mt-0.5">
-                        Consecutive calendar days in Indian Standard Time (UTC+5:30)
+                        Consecutive calendar days in Indian Standard Time (UTC+5:30) · <span className="text-[#C69432] font-semibold">Click any day to inspect hourly inflow</span>
                       </p>
                     </div>
                     <div className="flex items-center space-x-2 self-start sm:self-auto font-numeric text-[11px]">
@@ -886,7 +903,17 @@ export const AdminDashboard: React.FC = () => {
 
                   <div className="h-64 sm:h-72 w-full min-w-0">
                     <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={growthData}>
+                      <AreaChart 
+                        data={growthData}
+                        onClick={(e) => {
+                          if (e && e.activePayload && e.activePayload[0]) {
+                            setSelectedDayRecord(e.activePayload[0].payload);
+                            setSelectedTimeSlotKey('ALL');
+                            setTimeSlotSearch('');
+                          }
+                        }}
+                        className="cursor-pointer"
+                      >
                         <defs>
                           <linearGradient id="colorGrowthSignups" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="5%" stopColor="#C69432" stopOpacity={0.4} />
@@ -977,58 +1004,72 @@ export const AdminDashboard: React.FC = () => {
                           <th className="py-2.5 px-3">Candidate Applications</th>
                           <th className="py-2.5 px-3">Zigs Posted</th>
                           <th className="py-2.5 px-3">Zigs Completed</th>
-                          <th className="py-2.5 px-3 text-right">Day Activity</th>
+                          <th className="py-2.5 px-3 text-right">Hourly Drilldown</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#EBE4D8]">
-                        {[...filteredLedger].reverse().map((day: any) => {
-                          const totalDayActivity = (day.userSignups || 0) + (day.applicationsCount || 0) + (day.zigsPosted || 0);
-                          return (
-                            <tr key={day.dateKey} className="hover:bg-[#F0EBE1]/40 transition-colors">
-                              <td className="py-2.5 px-3">
-                                <div className="font-bold text-[#2C221E]">{day.month}</div>
-                                <div className="text-[10px] text-[#8C827A]">{day.dateKey}</div>
-                              </td>
-                              <td className="py-2.5 px-3">
-                                <span className={`inline-flex items-center px-2 py-0.5 rounded-md font-bold text-xs ${
-                                  day.userSignups > 0 
-                                    ? 'bg-[#DCFCE7] text-[#0F8B5F] border border-[#BBF7D0]' 
-                                    : 'text-[#8C827A]'
-                                }`}>
-                                  +{day.userSignups}
-                                </span>
-                              </td>
-                              <td className="py-2.5 px-3">
-                                <span className={`inline-flex items-center px-2 py-0.5 rounded-md font-bold text-xs ${
-                                  day.applicationsCount > 0 
-                                    ? 'bg-[#FEF3C7] text-[#B45309] border border-[#FDE68A]' 
-                                    : 'text-[#8C827A]'
-                                }`}>
-                                  {day.applicationsCount} applied
-                                </span>
-                              </td>
-                              <td className="py-2.5 px-3 text-[#2C221E] font-medium">
-                                {day.zigsPosted > 0 ? (
-                                  <span className="font-bold text-[#2563EB]">+{day.zigsPosted} zigs</span>
-                                ) : (
-                                  <span className="text-[#8C827A]">0</span>
-                                )}
-                              </td>
-                              <td className="py-2.5 px-3 text-[#2C221E] font-medium">
-                                {day.zigsCompleted > 0 ? (
-                                  <span className="font-bold text-[#16A34A]">{day.zigsCompleted} done</span>
-                                ) : (
-                                  <span className="text-[#8C827A]">0</span>
-                                )}
-                              </td>
-                              <td className="py-2.5 px-3 text-right">
-                                <span className="text-[11px] font-bold text-[#665C54]">
-                                  {totalDayActivity > 0 ? `${totalDayActivity} events` : 'Idle'}
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })}
+                        {[...filteredLedger].reverse().map((day: any) => (
+                          <tr 
+                            key={day.dateKey} 
+                            onClick={() => {
+                              setSelectedDayRecord(day);
+                              setSelectedTimeSlotKey('ALL');
+                              setTimeSlotSearch('');
+                            }}
+                            className="hover:bg-[#F0EBE1]/60 transition-colors cursor-pointer group"
+                          >
+                            <td className="py-2.5 px-3">
+                              <div className="font-bold text-[#2C221E]">{day.month}</div>
+                              <div className="text-[10px] text-[#8C827A]">{day.dateKey}</div>
+                            </td>
+                            <td className="py-2.5 px-3">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-md font-bold text-xs ${
+                                day.userSignups > 0 
+                                  ? 'bg-[#DCFCE7] text-[#0F8B5F] border border-[#BBF7D0]' 
+                                  : 'text-[#8C827A]'
+                              }`}>
+                                +{day.userSignups}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-md font-bold text-xs ${
+                                day.applicationsCount > 0 
+                                  ? 'bg-[#FEF3C7] text-[#B45309] border border-[#FDE68A]' 
+                                  : 'text-[#8C827A]'
+                              }`}>
+                                {day.applicationsCount} applied
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-[#2C221E] font-medium">
+                              {day.zigsPosted > 0 ? (
+                                <span className="font-bold text-[#2563EB]">+{day.zigsPosted} zigs</span>
+                              ) : (
+                                <span className="text-[#8C827A]">0</span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 text-[#2C221E] font-medium">
+                              {day.zigsCompleted > 0 ? (
+                                <span className="font-bold text-[#16A34A]">{day.zigsCompleted} done</span>
+                              ) : (
+                                <span className="text-[#8C827A]">0</span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 text-right">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedDayRecord(day);
+                                  setSelectedTimeSlotKey('ALL');
+                                  setTimeSlotSearch('');
+                                }}
+                                className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-[#2C221E] group-hover:bg-[#C69432] text-white text-[11px] font-bold shadow-xs transition-colors shrink-0"
+                              >
+                                <Clock className="w-3 h-3 text-[#C69432] group-hover:text-white" />
+                                <span>Inspect Hours</span>
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
                         {filteredLedger.length === 0 && (
                           <tr>
                             <td colSpan={6} className="py-6 text-center text-xs text-[#8C827A]">
@@ -1045,6 +1086,452 @@ export const AdminDashboard: React.FC = () => {
           })()}
         </div>
       )}
+
+      {/* DAY INFLOW & TIME-SLOT DRILLDOWN MODAL */}
+      {selectedDayRecord && (() => {
+        const growthList: any[] = Array.isArray(snapshot?.metricValue)
+          ? snapshot.metricValue
+          : (snapshot?.metricValue?.dailyTrends || []);
+        const currentIndex = growthList.findIndex((d: any) => d.dateKey === selectedDayRecord.dateKey);
+        const prevDay = currentIndex > 0 ? growthList[currentIndex - 1] : null;
+        const nextDay = currentIndex >= 0 && currentIndex < growthList.length - 1 ? growthList[currentIndex + 1] : null;
+
+        const dayHourlyBreakdown: any[] = selectedDayRecord.hourlyBreakdown || [];
+        const dayUsers: any[] = selectedDayRecord.users || [];
+        const dayApplications: any[] = selectedDayRecord.applications || [];
+
+        const activeSlot = dayHourlyBreakdown.find((b: any) => b.slotKey === selectedTimeSlotKey);
+
+        const slotUsers = selectedTimeSlotKey === 'ALL'
+          ? dayUsers
+          : dayUsers.filter((u: any) => activeSlot && u.hourIST >= activeSlot.startHour && u.hourIST <= activeSlot.endHour);
+
+        const filteredModalUsers = slotUsers.filter((u: any) => {
+          if (!timeSlotSearch.trim()) return true;
+          const q = timeSlotSearch.toLowerCase().trim();
+          return (
+            (u.name && u.name.toLowerCase().includes(q)) ||
+            (u.phone && u.phone.includes(q)) ||
+            (u.city && u.city.toLowerCase().includes(q)) ||
+            (u.id && u.id.toLowerCase().includes(q))
+          );
+        });
+
+        const slotApps = selectedTimeSlotKey === 'ALL'
+          ? dayApplications
+          : dayApplications.filter((a: any) => activeSlot && a.hourIST >= activeSlot.startHour && a.hourIST <= activeSlot.endHour);
+
+        const filteredModalApps = slotApps.filter((a: any) => {
+          if (!timeSlotSearch.trim()) return true;
+          const q = timeSlotSearch.toLowerCase().trim();
+          return (
+            (a.workerName && a.workerName.toLowerCase().includes(q)) ||
+            (a.taskTitle && a.taskTitle.toLowerCase().includes(q)) ||
+            (a.workerPhone && a.workerPhone.includes(q))
+          );
+        });
+
+        // 24 hour bar chart data
+        const day24HourData = Array.from({ length: 24 }, (_, h) => {
+          const ampm = h >= 12 ? 'PM' : 'AM';
+          const hour12 = h % 12 === 0 ? 12 : h % 12;
+          const label = `${hour12} ${ampm}`;
+          const count = selectedDayRecord.hourlyCounts ? selectedDayRecord.hourlyCounts[h] || 0 : 0;
+          return {
+            hour: h,
+            hourLabel: label,
+            signups: count,
+          };
+        });
+
+        let peakWindow = dayHourlyBreakdown[0];
+        for (const w of dayHourlyBreakdown) {
+          if (w.userCount > (peakWindow?.userCount || 0)) {
+            peakWindow = w;
+          }
+        }
+
+        return (
+          <div className="fixed inset-0 z-50 bg-[#2C221E]/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+            <div className="bg-[#FFFFFF] border border-[#EBE4D8] rounded-3xl shadow-2xl max-w-4xl w-full max-h-[92vh] flex flex-col overflow-hidden font-poppins">
+              {/* Modal Header */}
+              <div className="p-4 sm:p-5 border-b border-[#EBE4D8] flex items-start justify-between gap-3 bg-[#FAF7F2]">
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-[#C69432] bg-[#FDF8EE] px-2 py-0.5 rounded border border-[#F5E6CC]">
+                      24-Hour Time-Slot Analysis
+                    </span>
+                    <span className="text-[11px] text-[#665C54] font-medium font-numeric">
+                      IST (Asia/Kolkata)
+                    </span>
+                  </div>
+                  <h3 className="text-base sm:text-lg font-black text-[#2C221E] mt-1 font-numeric">
+                    {selectedDayRecord.month} ({selectedDayRecord.dateKey})
+                  </h3>
+                  <p className="text-[11px] text-[#665C54]">
+                    Select any time window below to see exactly how many users registered in that period.
+                  </p>
+                </div>
+
+                <div className="flex items-center space-x-1.5 shrink-0">
+                  <button
+                    disabled={!prevDay}
+                    onClick={() => {
+                      setSelectedDayRecord(prevDay);
+                      setSelectedTimeSlotKey('ALL');
+                      setTimeSlotSearch('');
+                    }}
+                    title={prevDay ? `Previous: ${prevDay.month}` : 'No previous day'}
+                    className="p-1.5 rounded-xl border border-[#EBE4D8] bg-white hover:bg-[#F0EBE1] text-[#2C221E] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <button
+                    disabled={!nextDay}
+                    onClick={() => {
+                      setSelectedDayRecord(nextDay);
+                      setSelectedTimeSlotKey('ALL');
+                      setTimeSlotSearch('');
+                    }}
+                    title={nextDay ? `Next: ${nextDay.month}` : 'No next day'}
+                    className="p-1.5 rounded-xl border border-[#EBE4D8] bg-white hover:bg-[#F0EBE1] text-[#2C221E] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setSelectedDayRecord(null)}
+                    className="p-1.5 rounded-xl border border-[#EBE4D8] bg-white hover:bg-[#FEE2E2] hover:text-[#DC2626] text-[#665C54] transition-colors ml-1"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Scrollable Modal Body */}
+              <div className="p-4 sm:p-5 overflow-y-auto space-y-4 sm:space-y-5">
+                {/* Day Summary Stats Banner */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3 font-numeric">
+                  <div className="p-3 rounded-xl bg-[#FAF7F2] border border-[#EBE4D8]">
+                    <span className="text-[10px] font-bold text-[#665C54] uppercase block">Total Day Signups</span>
+                    <span className="text-xl font-black text-[#0F8B5F] mt-0.5 block">+{selectedDayRecord.userSignups}</span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-[#FAF7F2] border border-[#EBE4D8]">
+                    <span className="text-[10px] font-bold text-[#665C54] uppercase block">Candidate Applications</span>
+                    <span className="text-xl font-black text-[#B45309] mt-0.5 block">{selectedDayRecord.applicationsCount}</span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-[#FAF7F2] border border-[#EBE4D8]">
+                    <span className="text-[10px] font-bold text-[#665C54] uppercase block">Peak Time Window</span>
+                    <span className="text-xs font-black text-[#2C221E] mt-1 block truncate">
+                      {peakWindow?.shortLabel || 'N/A'}
+                    </span>
+                    <span className="text-[10px] text-[#665C54]">+{peakWindow?.userCount || 0} users</span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-[#FAF7F2] border border-[#EBE4D8]">
+                    <span className="text-[10px] font-bold text-[#665C54] uppercase block">Gig Tasks Active</span>
+                    <span className="text-xs font-black text-[#2563EB] mt-1 block">
+                      +{selectedDayRecord.zigsPosted || 0} posted · {selectedDayRecord.zigsCompleted || 0} done
+                    </span>
+                  </div>
+                </div>
+
+                {/* "THIS TIME TO THIS TIME HOW MANY USERS ARE COMING" Time-Window Selector */}
+                <div className="space-y-2.5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                    <div>
+                      <h4 className="text-xs font-extrabold text-[#2C221E] uppercase tracking-wide">
+                        Hourly Inflow Windows (Click to Filter Roster)
+                      </h4>
+                      <p className="text-[11px] text-[#665C54]">
+                        Select a time window to filter candidates who joined during those hours
+                      </p>
+                    </div>
+                    {selectedTimeSlotKey !== 'ALL' && (
+                      <button
+                        onClick={() => setSelectedTimeSlotKey('ALL')}
+                        className="text-[11px] font-bold text-[#C69432] hover:underline self-start sm:self-auto"
+                      >
+                        Reset to All Hours
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 font-numeric">
+                    {/* Option 0: All Hours */}
+                    <button
+                      onClick={() => setSelectedTimeSlotKey('ALL')}
+                      className={`p-2.5 rounded-xl border text-left transition-all ${
+                        selectedTimeSlotKey === 'ALL'
+                          ? 'bg-[#2C221E] text-white border-[#2C221E] shadow-sm'
+                          : 'bg-[#FAF7F2] text-[#2C221E] border-[#EBE4D8] hover:border-[#C69432]'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold uppercase tracking-wider opacity-80">Full Day</span>
+                        <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
+                          selectedTimeSlotKey === 'ALL' ? 'bg-[#C69432] text-white' : 'bg-[#EBE4D8] text-[#5C524B]'
+                        }`}>
+                          24h
+                        </span>
+                      </div>
+                      <div className="text-sm font-black mt-1">All Hours</div>
+                      <div className="text-[10px] mt-1 flex items-center justify-between opacity-90">
+                        <span>+{selectedDayRecord.userSignups} Users</span>
+                        <span>{selectedDayRecord.applicationsCount} Apps</span>
+                      </div>
+                    </button>
+
+                    {/* 8 Windows */}
+                    {dayHourlyBreakdown.map((w: any) => {
+                      const isSelected = selectedTimeSlotKey === w.slotKey;
+                      const isPeak = peakWindow && peakWindow.slotKey === w.slotKey && w.userCount > 0;
+                      return (
+                        <button
+                          key={w.slotKey}
+                          onClick={() => setSelectedTimeSlotKey(w.slotKey)}
+                          className={`p-2.5 rounded-xl border text-left transition-all relative ${
+                            isSelected
+                              ? 'bg-[#2C221E] text-white border-[#2C221E] shadow-sm'
+                              : 'bg-[#FAF7F2] text-[#2C221E] border-[#EBE4D8] hover:border-[#C69432]'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="text-[10px] font-bold uppercase tracking-wider opacity-80 truncate">
+                              {w.period}
+                            </span>
+                            {isPeak && (
+                              <span className="text-[9px] font-bold px-1 py-0.2 rounded bg-[#C69432] text-white shrink-0">
+                                PEAK
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs sm:text-sm font-black mt-1 line-clamp-1">
+                            {w.shortLabel}
+                          </div>
+                          <div className="text-[10px] mt-1 flex items-center justify-between">
+                            <span className={`font-bold ${
+                              isSelected ? 'text-[#C69432]' : w.userCount > 0 ? 'text-[#0F8B5F]' : 'text-[#8C827A]'
+                            }`}>
+                              +{w.userCount} Users
+                            </span>
+                            <span className="opacity-75">{w.percentage}%</span>
+                          </div>
+                          <div className="text-[9px] opacity-70 mt-0.5">
+                            {w.label}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 24-Hour Visual Histogram */}
+                <div className="p-3 sm:p-4 rounded-xl bg-[#FAF7F2] border border-[#EBE4D8] space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-[#2C221E] uppercase tracking-wide">
+                      24-Hour Inflow Distribution (IST)
+                    </span>
+                    <span className="text-[10px] text-[#665C54] font-numeric">
+                      00:00 to 23:00 IST
+                    </span>
+                  </div>
+                  <div className="h-28 sm:h-32 w-full min-w-0">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={day24HourData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#EBE4D8" />
+                        <XAxis dataKey="hourLabel" stroke="#8C827A" tick={{ fontSize: 9 }} interval={2} />
+                        <YAxis stroke="#8C827A" tick={{ fontSize: 9 }} allowDecimals={false} />
+                        <Tooltip
+                          contentStyle={{ backgroundColor: '#FFFFFF', borderColor: '#EBE4D8', borderRadius: '10px', fontSize: '11px' }}
+                          formatter={(value: any) => [`+${value} users`, 'New Signups']}
+                        />
+                        <Bar dataKey="signups" fill="#C69432" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Candidate Roster / Applications Sub-Tabs */}
+                <div className="space-y-3 pt-2 border-t border-[#EBE4D8]">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={() => setDayModalTab('USERS')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+                          dayModalTab === 'USERS'
+                            ? 'bg-[#2C221E] text-white shadow-xs'
+                            : 'bg-[#F0EBE1] text-[#5C524B] hover:text-[#2C221E]'
+                        }`}
+                      >
+                        Registered Users ({filteredModalUsers.length})
+                      </button>
+                      <button
+                        onClick={() => setDayModalTab('APPLICATIONS')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+                          dayModalTab === 'APPLICATIONS'
+                            ? 'bg-[#2C221E] text-white shadow-xs'
+                            : 'bg-[#F0EBE1] text-[#5C524B] hover:text-[#2C221E]'
+                        }`}
+                      >
+                        Job Applications ({filteredModalApps.length})
+                      </button>
+                    </div>
+
+                    {/* Filter Input */}
+                    <div className="relative w-full sm:w-60">
+                      <Search className="w-3.5 h-3.5 text-[#8C827A] absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={timeSlotSearch}
+                        onChange={(e) => setTimeSlotSearch(e.target.value)}
+                        placeholder="Search name, phone, city..."
+                        className="w-full bg-[#FAF7F2] border border-[#EBE4D8] rounded-xl pl-8 pr-3 py-1 text-xs text-[#2C221E] placeholder-[#8C827A] focus:outline-none focus:border-[#C69432] font-numeric"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Users Table / List */}
+                  {dayModalTab === 'USERS' && (
+                    <div className="rounded-xl border border-[#EBE4D8] overflow-hidden max-h-72 overflow-y-auto">
+                      <table className="w-full text-left text-xs font-numeric">
+                        <thead className="bg-[#FAF7F2] text-[#C69432] uppercase font-bold sticky top-0 z-10 border-b border-[#EBE4D8]">
+                          <tr>
+                            <th className="py-2 px-3">User & ID</th>
+                            <th className="py-2 px-3">Registered Time (IST)</th>
+                            <th className="py-2 px-3">Contact Phone</th>
+                            <th className="py-2 px-3">Role</th>
+                            <th className="py-2 px-3">KYC Status</th>
+                            <th className="py-2 px-3 text-right">Location</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#EBE4D8]">
+                          {filteredModalUsers.map((u: any) => (
+                            <tr key={u.id} className="hover:bg-[#FAF7F2] transition-colors">
+                              <td className="py-2 px-3">
+                                <div className="font-bold text-[#2C221E]">{u.name}</div>
+                                <div className="text-[10px] text-[#8C827A] font-mono truncate max-w-[120px]">{u.id}</div>
+                              </td>
+                              <td className="py-2 px-3">
+                                <div className="inline-flex items-center space-x-1 text-[#0F8B5F] font-bold text-xs bg-[#DCFCE7] px-2 py-0.5 rounded-md border border-[#BBF7D0]">
+                                  <Clock className="w-3 h-3 text-[#0F8B5F]" />
+                                  <span>{u.timeIST}</span>
+                                </div>
+                              </td>
+                              <td className="py-2 px-3">
+                                <div className="flex items-center space-x-1.5">
+                                  <span className="font-semibold text-[#2C221E]">{u.phone}</span>
+                                  {u.phone !== 'Not Provided' && (
+                                    <button
+                                      onClick={() => handleCopyUserPhone(u.phone)}
+                                      className="p-1 hover:bg-[#EBE4D8] rounded text-[#8C827A] hover:text-[#2C221E]"
+                                      title="Copy phone"
+                                    >
+                                      {copiedUserPhone === u.phone ? (
+                                        <Check className="w-3 h-3 text-[#0F8B5F]" />
+                                      ) : (
+                                        <Copy className="w-3 h-3" />
+                                      )}
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="py-2 px-3">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                                  u.role === 'employer' ? 'bg-[#FEF3C7] text-[#B45309]' : 'bg-[#E0F2FE] text-[#0284C7]'
+                                }`}>
+                                  {u.role}
+                                </span>
+                              </td>
+                              <td className="py-2 px-3">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  u.kycStatus === 'APPROVED' ? 'bg-[#DCFCE7] text-[#16A34A]' :
+                                  u.kycStatus === 'PENDING' ? 'bg-[#FEF3C7] text-[#D97706]' :
+                                  'bg-[#F3F4F6] text-[#6B7280]'
+                                }`}>
+                                  {u.kycStatus === 'APPROVED' ? 'Approved' : u.kycStatus === 'PENDING' ? 'Pending' : 'Not Started'}
+                                </span>
+                              </td>
+                              <td className="py-2 px-3 text-right text-[11px] text-[#665C54] truncate max-w-[120px]">
+                                {u.city || 'Not Specified'}
+                              </td>
+                            </tr>
+                          ))}
+                          {filteredModalUsers.length === 0 && (
+                            <tr>
+                              <td colSpan={6} className="py-8 text-center text-xs text-[#8C827A]">
+                                No registered users found for {activeSlot ? activeSlot.label : 'this period'}
+                                {timeSlotSearch ? ` matching "${timeSlotSearch}"` : ''}.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Applications Table / List */}
+                  {dayModalTab === 'APPLICATIONS' && (
+                    <div className="rounded-xl border border-[#EBE4D8] overflow-hidden max-h-72 overflow-y-auto">
+                      <table className="w-full text-left text-xs font-numeric">
+                        <thead className="bg-[#FAF7F2] text-[#C69432] uppercase font-bold sticky top-0 z-10 border-b border-[#EBE4D8]">
+                          <tr>
+                            <th className="py-2 px-3">Candidate Applicant</th>
+                            <th className="py-2 px-3">Applied Time (IST)</th>
+                            <th className="py-2 px-3">Target Gig Task</th>
+                            <th className="py-2 px-3">Category</th>
+                            <th className="py-2 px-3 text-right">Application Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#EBE4D8]">
+                          {filteredModalApps.map((a: any) => (
+                            <tr key={a.id} className="hover:bg-[#FAF7F2] transition-colors">
+                              <td className="py-2 px-3">
+                                <div className="font-bold text-[#2C221E]">{a.workerName}</div>
+                                <div className="text-[10px] text-[#8C827A]">{a.workerPhone}</div>
+                              </td>
+                              <td className="py-2 px-3">
+                                <div className="inline-flex items-center space-x-1 text-[#0F8B5F] font-bold text-xs bg-[#DCFCE7] px-2 py-0.5 rounded-md border border-[#BBF7D0]">
+                                  <Clock className="w-3 h-3 text-[#0F8B5F]" />
+                                  <span>{a.timeIST}</span>
+                                </div>
+                              </td>
+                              <td className="py-2 px-3">
+                                <div className="font-bold text-[#2C221E] line-clamp-1">{a.taskTitle}</div>
+                                <div className="text-[10px] text-[#8C827A] font-mono">{a.taskId}</div>
+                              </td>
+                              <td className="py-2 px-3">
+                                <span className="text-[10px] font-bold uppercase text-[#C69432] bg-[#FDF8EE] px-1.5 py-0.5 rounded border border-[#F5E6CC]">
+                                  {a.taskCategory}
+                                </span>
+                              </td>
+                              <td className="py-2 px-3 text-right">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                                  a.status === 'accepted' ? 'bg-[#DCFCE7] text-[#16A34A]' :
+                                  a.status === 'cancelled' ? 'bg-[#FEE2E2] text-[#DC2626]' :
+                                  'bg-[#FEF3C7] text-[#D97706]'
+                                }`}>
+                                  {a.status}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                          {filteredModalApps.length === 0 && (
+                            <tr>
+                              <td colSpan={5} className="py-8 text-center text-xs text-[#8C827A]">
+                                No job applications submitted during {activeSlot ? activeSlot.label : 'this period'}
+                                {timeSlotSearch ? ` matching "${timeSlotSearch}"` : ''}.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

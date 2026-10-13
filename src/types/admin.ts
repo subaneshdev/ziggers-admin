@@ -323,5 +323,58 @@ export interface PostedZigRecord {
   createdAt: string;
 }
 
+export interface DailyTimeWindowRecord {
+  slotKey: string;
+  label: string;
+  shortLabel: string;
+  period: string;
+  startHour: number;
+  endHour: number;
+  userCount: number;
+  applicationCount: number;
+  percentage: number;
+}
+
+export interface DayRegisteredUserRecord {
+  id: string;
+  name: string;
+  phone: string;
+  role: string;
+  kycStatus: string;
+  timeIST: string;
+  hourIST: number;
+  createdAt: string;
+  avatar?: string;
+  city?: string;
+}
+
+export interface DayJobApplicationRecord {
+  id: string;
+  taskId: string;
+  taskTitle: string;
+  taskCategory: string;
+  workerId: string;
+  workerName: string;
+  workerPhone: string;
+  status: string;
+  timeIST: string;
+  hourIST: number;
+  createdAt: string;
+}
+
+export interface DailyGrowthTrendRecord {
+  dateKey: string;
+  month: string;
+  fullDate: string;
+  userSignups: number;
+  applicationsCount: number;
+  zigsPosted: number;
+  zigsCompleted: number;
+  hourlyBreakdown: DailyTimeWindowRecord[];
+  hourlyCounts: number[];
+  users: DayRegisteredUserRecord[];
+  applications: DayJobApplicationRecord[];
+}
+
 
 

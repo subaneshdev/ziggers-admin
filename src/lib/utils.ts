@@ -103,6 +103,39 @@ export function getISTStartOfTodayMs(now: Date = new Date()): number {
   return new Date(`${istDateStr}T00:00:00.000+05:30`).getTime();
 }
 
+export function getISTHour(dateInput: string | number | Date): number {
+  try {
+    const d = new Date(dateInput);
+    if (isNaN(d.getTime())) return 0;
+    const hourStr = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: 'numeric',
+      hourCycle: 'h23',
+    }).format(d);
+    const parsed = parseInt(hourStr, 10);
+    return isNaN(parsed) ? 0 : parsed;
+  } catch {
+    return 0;
+  }
+}
+
+export function getISTTimeString(dateInput: string | number | Date): string {
+  try {
+    const d = new Date(dateInput);
+    if (isNaN(d.getTime())) return 'N/A';
+    return (
+      new Intl.DateTimeFormat('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      }).format(d).toUpperCase() + ' IST'
+    );
+  } catch {
+    return 'N/A';
+  }
+}
+
 
 // ==========================================
 // 1. Pricing, Fees & Escrow Funding Logics

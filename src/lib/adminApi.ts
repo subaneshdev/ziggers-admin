@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { getISTDateKey, getISTStartOfTodayMs } from './utils';
+import { getISTDateKey, getISTStartOfTodayMs, getISTHour, getISTTimeString } from './utils';
 import { 
   UserProfile, 
   KycDetail, 
@@ -18,7 +18,11 @@ import {
   ReferralRecord,
   SupportTicketRecord,
   PostedZigRecord,
-  TaskApplicantRecord
+  TaskApplicantRecord,
+  DailyTimeWindowRecord,
+  DayRegisteredUserRecord,
+  DayJobApplicationRecord,
+  DailyGrowthTrendRecord
 } from '../types/admin';
 
 // ============================================================================
@@ -1171,28 +1175,93 @@ export const adminApi = {
         cancelled_zigs: cancelledCount
       };
     } else if (metricKey === 'growth_trends') {
-      // 100% Deterministic 30 Consecutive Calendar Days in IST (Asia/Kolkata)
-      const dailyDataMap: Record<string, { userSignups: number; applicationsCount: number; zigsCompleted: number; zigsPosted: number }> = {};
+      // 100% Deterministic 30 Consecutive Calendar Days in IST (Asia/Kolkata) with hourly drilldown
+      interface DayStatsAccumulator {
+        userSignups: number;
+        applicationsCount: number;
+        zigsCompleted: number;
+        zigsPosted: number;
+        hourlyCounts: number[];
+        hourlyAppsCounts: number[];
+        users: DayRegisteredUserRecord[];
+        applications: DayJobApplicationRecord[];
+      }
+
+      const dailyDataMap: Record<string, DayStatsAccumulator> = {};
       const daysList: string[] = [];
       for (let i = 29; i >= 0; i--) {
         const d = new Date(todayStartIstMs - i * 24 * 60 * 60 * 1000 + 4 * 60 * 60 * 1000);
         const key = getISTDateKey(d);
         if (key && !dailyDataMap[key]) {
-          dailyDataMap[key] = { userSignups: 0, applicationsCount: 0, zigsCompleted: 0, zigsPosted: 0 };
+          dailyDataMap[key] = {
+            userSignups: 0,
+            applicationsCount: 0,
+            zigsCompleted: 0,
+            zigsPosted: 0,
+            hourlyCounts: new Array(24).fill(0),
+            hourlyAppsCounts: new Array(24).fill(0),
+            users: [],
+            applications: [],
+          };
           daysList.push(key);
         }
       }
 
+      // Fast lookup maps for applications join
+      const taskMap = new Map((allTasks || []).map(t => [t.id, t]));
+      const profileMap = new Map((allProfiles || []).map(p => [p.id, p]));
+
       allProfiles.forEach(p => {
         if (!p.created_at) return;
         const k = getISTDateKey(p.created_at);
-        if (dailyDataMap[k]) dailyDataMap[k].userSignups++;
+        if (dailyDataMap[k]) {
+          dailyDataMap[k].userSignups++;
+          const hour = getISTHour(p.created_at);
+          if (hour >= 0 && hour < 24) {
+            dailyDataMap[k].hourlyCounts[hour]++;
+          }
+          const norm = normalizeProfileRow(p);
+          dailyDataMap[k].users.push({
+            id: p.id,
+            name: norm.name,
+            phone: norm.phone,
+            role: norm.roleType,
+            kycStatus: norm.kycStatus,
+            timeIST: getISTTimeString(p.created_at),
+            hourIST: hour,
+            createdAt: p.created_at,
+            avatar: norm.avatarUrl,
+            city: norm.city,
+          });
+        }
       });
 
       allApps.forEach(a => {
         if (!a.created_at) return;
         const k = getISTDateKey(a.created_at);
-        if (dailyDataMap[k]) dailyDataMap[k].applicationsCount++;
+        if (dailyDataMap[k]) {
+          dailyDataMap[k].applicationsCount++;
+          const hour = getISTHour(a.created_at);
+          if (hour >= 0 && hour < 24) {
+            dailyDataMap[k].hourlyAppsCounts[hour]++;
+          }
+          const task = taskMap.get(a.task_id);
+          const workerProfile = profileMap.get(a.worker_id);
+          const workerNorm = workerProfile ? normalizeProfileRow(workerProfile) : null;
+          dailyDataMap[k].applications.push({
+            id: a.id,
+            taskId: a.task_id,
+            taskTitle: task?.title || 'Gig Assignment',
+            taskCategory: task?.category || 'General',
+            workerId: a.worker_id,
+            workerName: workerNorm?.name || `Worker (${String(a.worker_id || '').slice(0, 6)})`,
+            workerPhone: workerNorm?.phone || 'Not Provided',
+            status: a.status || 'pending',
+            timeIST: getISTTimeString(a.created_at),
+            hourIST: hour,
+            createdAt: a.created_at,
+          });
+        }
       });
 
       allTasks.forEach(t => {
@@ -1205,10 +1274,58 @@ export const adminApi = {
       });
 
       const monthShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      const trendsList = daysList.map(dayKey => {
-        const stats = dailyDataMap[dayKey] || { userSignups: 0, applicationsCount: 0, zigsPosted: 0, zigsCompleted: 0 };
+      const TIME_WINDOWS = [
+        { slotKey: '00_03', label: '12:00 AM - 03:00 AM', shortLabel: '12 AM - 3 AM', period: 'Late Night', startHour: 0, endHour: 2 },
+        { slotKey: '03_06', label: '03:00 AM - 06:00 AM', shortLabel: '3 AM - 6 AM', period: 'Early Dawn', startHour: 3, endHour: 5 },
+        { slotKey: '06_09', label: '06:00 AM - 09:00 AM', shortLabel: '6 AM - 9 AM', period: 'Morning Inflow', startHour: 6, endHour: 8 },
+        { slotKey: '09_12', label: '09:00 AM - 12:00 PM', shortLabel: '9 AM - 12 PM', period: 'Forenoon Peak', startHour: 9, endHour: 11 },
+        { slotKey: '12_15', label: '12:00 PM - 03:00 PM', shortLabel: '12 PM - 3 PM', period: 'Afternoon Inflow', startHour: 12, endHour: 14 },
+        { slotKey: '15_18', label: '03:00 PM - 06:00 PM', shortLabel: '3 PM - 6 PM', period: 'Evening Inflow', startHour: 15, endHour: 17 },
+        { slotKey: '18_21', label: '06:00 PM - 09:00 PM', shortLabel: '6 PM - 9 PM', period: 'Prime Evening', startHour: 18, endHour: 20 },
+        { slotKey: '21_24', label: '09:00 PM - 12:00 AM', shortLabel: '9 PM - 12 AM', period: 'Night Rush', startHour: 21, endHour: 23 },
+      ];
+
+      const trendsList: DailyGrowthTrendRecord[] = daysList.map(dayKey => {
+        const stats = dailyDataMap[dayKey] || {
+          userSignups: 0,
+          applicationsCount: 0,
+          zigsPosted: 0,
+          zigsCompleted: 0,
+          hourlyCounts: new Array(24).fill(0),
+          hourlyAppsCounts: new Array(24).fill(0),
+          users: [],
+          applications: [],
+        };
+
         const [, mStr, dStr] = dayKey.split('-');
         const formattedMonth = `${Number(dStr)} ${monthShort[Number(mStr) - 1]}`;
+
+        // Compute 8 standard time windows
+        const hourlyBreakdown: DailyTimeWindowRecord[] = TIME_WINDOWS.map(w => {
+          let userCount = 0;
+          let applicationCount = 0;
+          for (let h = w.startHour; h <= w.endHour; h++) {
+            userCount += stats.hourlyCounts[h] || 0;
+            applicationCount += stats.hourlyAppsCounts[h] || 0;
+          }
+          const percentage = stats.userSignups > 0 ? Math.round((userCount / stats.userSignups) * 100) : 0;
+          return {
+            slotKey: w.slotKey,
+            label: w.label,
+            shortLabel: w.shortLabel,
+            period: w.period,
+            startHour: w.startHour,
+            endHour: w.endHour,
+            userCount,
+            applicationCount,
+            percentage,
+          };
+        });
+
+        // Sort users and applications chronologically descending (newest first)
+        const sortedUsers = [...stats.users].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        const sortedApps = [...stats.applications].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
         return {
           dateKey: dayKey,
           month: formattedMonth, // Clean chart label: "13 Oct", "12 Oct"
@@ -1217,6 +1334,10 @@ export const adminApi = {
           applicationsCount: stats.applicationsCount,
           zigsPosted: stats.zigsPosted,
           zigsCompleted: stats.zigsCompleted,
+          hourlyBreakdown,
+          hourlyCounts: stats.hourlyCounts,
+          users: sortedUsers,
+          applications: sortedApps,
         };
       });
 
