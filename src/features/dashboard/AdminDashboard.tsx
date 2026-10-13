@@ -83,8 +83,8 @@ export const AdminDashboard: React.FC = () => {
   const { data: snapshot, isLoading } = useQuery({
     queryKey: ['analytics', activeTab],
     queryFn: () => adminApi.fetchAnalytics(activeTab),
-    staleTime: 10000,
-    refetchInterval: 30000,
+    staleTime: 60000,
+    refetchInterval: 120000,
     placeholderData: (prev) => prev,
   });
 

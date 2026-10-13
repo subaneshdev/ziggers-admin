@@ -30,9 +30,47 @@ import {
 // Prevents Supabase PostgREST 1,000-row truncation & heap-order flickering
 // ============================================================================
 
+export const SLIM_PROFILE_COLUMNS = [
+  'id',
+  'mobile',
+  'full_name',
+  'worker_name',
+  'employer_name',
+  'business_name',
+  'email',
+  'kyc_status',
+  'worker_kyc_status',
+  'employer_kyc_status',
+  'id_type',
+  'id_card_number',
+  'trust_score',
+  'wallet_balance',
+  'is_bank_verified',
+  'account_status',
+  'is_suspended',
+  'profile_photo_url',
+  'selfie_url',
+  'city',
+  'state',
+  'address',
+  'business_address',
+  'pincode',
+  'created_at',
+  'updated_at',
+  'organization_id',
+  'rating',
+  'referred_by_id',
+  'referral_code',
+  'worker_referral_code',
+  'employer_referral_code',
+  'referral_earnings',
+  'completed_orders',
+  'total_on_time_rate'
+].join(',');
+
 let cachedProfilesData: { rows: any[]; fetchedAt: number; isoTimestamp: string } | null = null;
 let inFlightProfilesPromise: Promise<{ rows: any[]; fetchedAt: number; isoTimestamp: string }> | null = null;
-const PROFILES_CACHE_TTL_MS = 10000; // 10 seconds deduplication window
+const PROFILES_CACHE_TTL_MS = 180000; // 3 minutes in-memory cache window
 
 export function invalidateProfilesCache() {
   cachedProfilesData = null;
@@ -53,7 +91,7 @@ async function fetchAllProfilesRows(forceRefresh = false): Promise<{ rows: any[]
       const PAGE_SIZE = 1000;
       const { data: firstPage, count, error } = await supabase
         .from('profiles')
-        .select('*', { count: 'exact' })
+        .select(SLIM_PROFILE_COLUMNS as any, { count: 'exact' })
         .order('created_at', { ascending: false })
         .order('id', { ascending: true })
         .range(0, PAGE_SIZE - 1);
@@ -73,11 +111,11 @@ async function fetchAllProfilesRows(forceRefresh = false): Promise<{ rows: any[]
             (async () => {
               const { data } = await supabase
                 .from('profiles')
-                .select('*')
+                .select(SLIM_PROFILE_COLUMNS as any)
                 .order('created_at', { ascending: false })
                 .order('id', { ascending: true })
                 .range(from, from + PAGE_SIZE - 1);
-              return data || [];
+              return (data as any[]) || [];
             })()
           );
         }
@@ -110,6 +148,62 @@ async function fetchAllProfilesRows(forceRefresh = false): Promise<{ rows: any[]
   })();
 
   return inFlightProfilesPromise;
+}
+
+interface AnalyticsRawData {
+  tasks: any[];
+  apps: any[];
+  disputes: any[];
+  walletTx: any[];
+  profilesRes: { rows: any[]; fetchedAt: number; isoTimestamp: string };
+  fetchedAt: number;
+}
+
+let cachedAnalyticsData: AnalyticsRawData | null = null;
+let inFlightAnalyticsPromise: Promise<AnalyticsRawData> | null = null;
+const ANALYTICS_DATA_CACHE_TTL_MS = 120000; // 2 minutes in-memory cache
+
+export function invalidateAnalyticsCache() {
+  cachedAnalyticsData = null;
+  inFlightAnalyticsPromise = null;
+  invalidateProfilesCache();
+}
+
+async function getAnalyticsRawData(forceRefresh = false): Promise<AnalyticsRawData> {
+  const now = Date.now();
+  if (!forceRefresh && cachedAnalyticsData && now - cachedAnalyticsData.fetchedAt < ANALYTICS_DATA_CACHE_TTL_MS) {
+    return cachedAnalyticsData;
+  }
+  if (!forceRefresh && inFlightAnalyticsPromise) {
+    return inFlightAnalyticsPromise;
+  }
+
+  inFlightAnalyticsPromise = (async () => {
+    try {
+      const [tasksRes, appsRes, profilesRes, disputesRes, walletTxRes] = await Promise.all([
+        supabase.from('tasks').select('*').order('created_at', { ascending: false }).range(0, 9999),
+        supabase.from('task_applications').select('*').order('created_at', { ascending: false }).range(0, 9999),
+        fetchAllProfilesRows(forceRefresh),
+        supabase.from('disputes').select('*').range(0, 9999),
+        supabase.from('wallet_transactions').select('*').order('created_at', { ascending: false }).range(0, 9999),
+      ]);
+
+      const data: AnalyticsRawData = {
+        tasks: tasksRes.data || [],
+        apps: appsRes.data || [],
+        disputes: disputesRes.data || [],
+        walletTx: walletTxRes.data || [],
+        profilesRes,
+        fetchedAt: Date.now(),
+      };
+      cachedAnalyticsData = data;
+      return data;
+    } finally {
+      inFlightAnalyticsPromise = null;
+    }
+  })();
+
+  return inFlightAnalyticsPromise;
 }
 
 function normalizeKycStatus(p: any): KycStatus {
@@ -686,10 +780,17 @@ export const adminApi = {
       .select('*')
       .order('created_at', { ascending: false });
 
-    const { rows: profiles } = await fetchAllProfilesRows();
-    const profileMap = new Map((profiles || []).map(p => [p.id, p]));
-
     if (!error && alerts && alerts.length > 0) {
+      const userIds = Array.from(new Set(alerts.map(a => a.user_id).filter(Boolean)));
+      let profileMap = new Map<string, any>();
+      if (userIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select(SLIM_PROFILE_COLUMNS as any)
+          .in('id', userIds);
+        profileMap = new Map(((profiles as any[]) || []).map(p => [p.id, p]));
+      }
+
       return alerts.map((f) => {
         const u = profileMap.get(f.user_id);
         const norm = u ? normalizeProfileRow(u) : null;
@@ -713,28 +814,33 @@ export const adminApi = {
       });
     }
 
-    if (profiles && profiles.length > 0) {
-      const suspended = profiles.filter(p => p.is_suspended || p.kyc_status === 'rejected');
-      if (suspended.length > 0) {
-        return suspended.map((p) => {
-          const norm = normalizeProfileRow(p);
-          return {
-            alertId: `alert_${p.id.slice(0, 8)}`,
-            userId: p.id,
-            userName: norm.name,
-            userRole: norm.roleType,
-            riskScore: p.is_suspended ? 95 : 80,
-            alertType: 'SUSPICIOUS_PAYOUT',
-            severity: p.is_suspended ? 'CRITICAL' : 'HIGH',
-            details: `Account flagged in Supabase profiles (Suspended: ${p.is_suspended || false}, KYC: ${p.kyc_status || 'not_started'})`,
-            ipAddress: 'Logged in Profile',
-            deviceId: `Profile-${p.id.slice(0, 6)}`,
-            location: norm.city,
-            timestamp: p.updated_at || p.created_at || '',
-            status: p.is_suspended ? 'SUSPENDED' : 'FLAGGED',
-          };
-        });
-      }
+    // Direct targeted query for suspended or rejected profiles (only the flagged users)
+    const { data: suspended } = await supabase
+      .from('profiles')
+      .select(SLIM_PROFILE_COLUMNS as any)
+      .or('is_suspended.eq.true,kyc_status.eq.rejected')
+      .limit(50);
+
+    const suspendedRows = (suspended as any[]) || [];
+    if (suspendedRows.length > 0) {
+      return suspendedRows.map((p) => {
+        const norm = normalizeProfileRow(p);
+        return {
+          alertId: `alert_${p.id.slice(0, 8)}`,
+          userId: p.id,
+          userName: norm.name,
+          userRole: norm.roleType,
+          riskScore: p.is_suspended ? 95 : 80,
+          alertType: 'SUSPICIOUS_PAYOUT',
+          severity: p.is_suspended ? 'CRITICAL' : 'HIGH',
+          details: `Account flagged in Supabase profiles (Suspended: ${p.is_suspended || false}, KYC: ${p.kyc_status || 'not_started'})`,
+          ipAddress: 'Logged in Profile',
+          deviceId: `Profile-${p.id.slice(0, 6)}`,
+          location: norm.city,
+          timestamp: p.updated_at || p.created_at || '',
+          status: p.is_suspended ? 'SUSPENDED' : 'FLAGGED',
+        };
+      });
     }
 
     return [];
@@ -876,28 +982,24 @@ export const adminApi = {
 
   // --- 10. Analytics Engine (100% LIVE from Supabase tables — ALL profiles paginated, tasks, disputes) ---
   async fetchAnalytics(metricKey: AnalyticsMetricKey): Promise<AnalyticsSnapshot> {
-    const [snapshotRes, tasksRes, appsRes, profilesRes, disputesRes, walletTxRes] = await Promise.all([
+    const [snapshotRes, raw] = await Promise.all([
       supabase
         .from('admin_analytics_snapshot')
         .select('computed_at, metric_value')
         .eq('metric_key', metricKey)
         .maybeSingle(),
-      supabase.from('tasks').select('*').order('created_at', { ascending: false }).range(0, 9999),
-      supabase.from('task_applications').select('*').order('created_at', { ascending: false }).range(0, 9999),
-      fetchAllProfilesRows(),
-      supabase.from('disputes').select('*').range(0, 9999),
-      supabase.from('wallet_transactions').select('*').order('created_at', { ascending: false }).range(0, 9999),
+      getAnalyticsRawData(),
     ]);
 
     const snapshotRow = snapshotRes.data;
     const snapshotRaw = snapshotRow?.metric_value;
-    const computedAt = profilesRes.isoTimestamp || snapshotRow?.computed_at || new Date().toISOString();
+    const computedAt = raw.profilesRes.isoTimestamp || snapshotRow?.computed_at || new Date().toISOString();
 
-    const allProfiles = profilesRes.rows || [];
-    const allTasks = tasksRes.data || [];
-    const allApps = appsRes.data || [];
-    const allDisputes = disputesRes.data || [];
-    const allWalletTx = walletTxRes.data || [];
+    const allProfiles = raw.profilesRes.rows || [];
+    const allTasks = raw.tasks || [];
+    const allApps = raw.apps || [];
+    const allDisputes = raw.disputes || [];
+    const allWalletTx = raw.walletTx || [];
 
     // Live counts across ALL profiles in Supabase (no 1000-row truncation)
     const totalUsers = allProfiles.length;
@@ -1398,7 +1500,7 @@ export const adminApi = {
   },
 
   async triggerAnalyticsRefresh(): Promise<void> {
-    invalidateProfilesCache();
+    invalidateAnalyticsCache();
     const now = new Date().toISOString();
     await supabase
       .from('admin_analytics_snapshot')
@@ -1413,10 +1515,24 @@ export const adminApi = {
       .select('*')
       .order('created_at', { ascending: false });
 
-    const { rows: profiles } = await fetchAllProfilesRows();
-    const profileMap = new Map((profiles || []).map(p => [p.id, p]));
-
     if (!error && refs && refs.length > 0) {
+      const userIds = new Set<string>();
+      refs.forEach(r => {
+        const referrerId = r.referrer_id || r.referrer_user_id;
+        const refereeId = r.referred_id || r.referred_user_id || r.referee_id;
+        if (referrerId) userIds.add(referrerId);
+        if (refereeId) userIds.add(refereeId);
+      });
+
+      let profileMap = new Map<string, any>();
+      if (userIds.size > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select(SLIM_PROFILE_COLUMNS as any)
+          .in('id', Array.from(userIds));
+        profileMap = new Map(((profiles as any[]) || []).map(p => [p.id, p]));
+      }
+
       return refs.map(r => {
         const referrerId = r.referrer_id || r.referrer_user_id;
         const refereeId = r.referred_id || r.referred_user_id || r.referee_id;
@@ -1443,9 +1559,28 @@ export const adminApi = {
       });
     }
 
-    const referredProfiles = (profiles || []).filter(p => p.referred_by_id);
-    return referredProfiles.map(p => {
-      const referrer = profileMap.get(p.referred_by_id || '');
+    // Direct fallback query for profiles with referrer ID
+    const { data: referredProfiles } = await supabase
+      .from('profiles')
+      .select(SLIM_PROFILE_COLUMNS as any)
+      .not('referred_by_id', 'is', null)
+      .limit(100);
+
+    const refRows = (referredProfiles as any[]) || [];
+    if (refRows.length === 0) return [];
+
+    const referrerIds = Array.from(new Set(refRows.map(p => p.referred_by_id).filter(Boolean)));
+    let referrerMap = new Map<string, any>();
+    if (referrerIds.length > 0) {
+      const { data: refProfiles } = await supabase
+        .from('profiles')
+        .select(SLIM_PROFILE_COLUMNS as any)
+        .in('id', referrerIds);
+      referrerMap = new Map(((refProfiles as any[]) || []).map(p => [p.id, p]));
+    }
+
+    return refRows.map(p => {
+      const referrer = referrerMap.get(p.referred_by_id || '');
       const referrerNorm = referrer ? normalizeProfileRow(referrer) : null;
       const refereeNorm = normalizeProfileRow(p);
       return {
@@ -1502,29 +1637,34 @@ export const adminApi = {
       .select('*')
       .order('created_at', { ascending: false });
 
-    const { rows: profiles } = await fetchAllProfilesRows();
-    const profileMap = new Map((profiles || []).map(p => [p.id, p]));
+    if (error || !tickets || tickets.length === 0) return [];
 
-    if (!error && tickets && tickets.length > 0) {
-      return tickets.map(t => {
-        const u = profileMap.get(t.user_id);
-        const norm = u ? normalizeProfileRow(u) : null;
-        return {
-          id: t.id,
-          userId: t.user_id,
-          userName: norm?.name || (t.user_id ? `User (${t.user_id.slice(0, 8)})` : 'Unknown User'),
-          userPhone: norm?.phone || 'Not Provided',
-          category: t.category || 'General',
-          subject: t.subject || 'Support Ticket',
-          description: t.description || '',
-          status: (t.status?.toUpperCase() || 'OPEN') as 'OPEN' | 'REPLIED' | 'CLOSED',
-          createdAt: t.created_at || '',
-          updatedAt: t.updated_at,
-        };
-      });
+    const userIds = Array.from(new Set(tickets.map(t => t.user_id).filter(Boolean)));
+    let profileMap = new Map<string, any>();
+    if (userIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select(SLIM_PROFILE_COLUMNS as any)
+        .in('id', userIds);
+      profileMap = new Map(((profiles as any[]) || []).map(p => [p.id, p]));
     }
 
-    return [];
+    return tickets.map(t => {
+      const u = profileMap.get(t.user_id);
+      const norm = u ? normalizeProfileRow(u) : null;
+      return {
+        id: t.id,
+        userId: t.user_id,
+        userName: norm?.name || (t.user_id ? `User (${t.user_id.slice(0, 8)})` : 'Unknown User'),
+        userPhone: norm?.phone || 'Not Provided',
+        category: t.category || 'General',
+        subject: t.subject || 'Support Ticket',
+        description: t.description || '',
+        status: (t.status?.toUpperCase() || 'OPEN') as 'OPEN' | 'REPLIED' | 'CLOSED',
+        createdAt: t.created_at || '',
+        updatedAt: t.updated_at,
+      };
+    });
   },
 
   async updateSupportTicketStatus(ticketId: string, status: 'OPEN' | 'REPLIED' | 'CLOSED'): Promise<void> {
@@ -1537,16 +1677,32 @@ export const adminApi = {
 
   // --- 14. Posted Zigs & Task Management (100% Real Database Queries) ---
   async fetchPostedZigsList(): Promise<PostedZigRecord[]> {
-    const [tasksRes, appsRes, profilesRes] = await Promise.all([
+    const [tasksRes, appsRes] = await Promise.all([
       supabase.from('tasks').select('*').order('created_at', { ascending: false }),
       supabase.from('task_applications').select('*').order('created_at', { ascending: false }),
-      fetchAllProfilesRows(),
     ]);
 
-    const tasks = tasksRes.data;
+    const tasks = tasksRes.data || [];
     const apps = appsRes.data || [];
-    const profiles = profilesRes.rows || [];
-    const profileMap = new Map(profiles.map(p => [p.id, p]));
+
+    // Collect ONLY the user IDs involved in these tasks and applications
+    const userIds = new Set<string>();
+    tasks.forEach(t => {
+      if (t.created_by) userIds.add(t.created_by);
+      if (t.assigned_to) userIds.add(t.assigned_to);
+    });
+    apps.forEach(a => {
+      if (a.worker_id) userIds.add(a.worker_id);
+    });
+
+    let profileMap = new Map<string, any>();
+    if (userIds.size > 0) {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select(SLIM_PROFILE_COLUMNS as any)
+        .in('id', Array.from(userIds));
+      profileMap = new Map(((profiles as any[]) || []).map(p => [p.id, p]));
+    }
 
     // Map applications by task_id with complete worker details
     const taskApplicationsMap = new Map<string, TaskApplicantRecord[]>();

@@ -30,8 +30,8 @@ export const VerificationQueueScreen: React.FC = () => {
   const { data: users = [], isLoading } = useQuery({
     queryKey: ['verificationQueueUsers'],
     queryFn: () => adminApi.fetchPendingKycs(),
-    staleTime: 10000,
-    refetchInterval: 30000,
+    staleTime: 60000,
+    refetchInterval: 120000,
     placeholderData: (prev) => prev,
   });
 
