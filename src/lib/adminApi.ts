@@ -1,5 +1,13 @@
 import { supabase } from './supabaseClient';
-import { getISTDateKey, getISTStartOfTodayMs, getISTHour, getISTTimeString } from './utils';
+import { 
+  getISTDateKey, 
+  getISTStartOfTodayMs, 
+  getISTHour, 
+  getISTTimeString,
+  cleanAadhaarDigits,
+  formatAadhaarNumber,
+  isValidAadhaarNumber
+} from './utils';
 import { 
   UserProfile, 
   KycDetail, 
@@ -22,7 +30,8 @@ import {
   DailyTimeWindowRecord,
   DayRegisteredUserRecord,
   DayJobApplicationRecord,
-  DailyGrowthTrendRecord
+  DailyGrowthTrendRecord,
+  ManualKycQueueItem
 } from '../types/admin';
 
 // ============================================================================
@@ -528,13 +537,213 @@ export const adminApi = {
     };
   },
 
-  async approveKyc(userId: string, roleType: RoleType): Promise<void> {
-    const updateObj = { 
+  // --- 1. KYC Module (100% Real Database Queries from Supabase 'profiles' table) ---
+  async fetchManualKycQueue(filterTab: 'PENDING' | 'WITH_DOCS' | 'APPROVED' | 'ALL' = 'PENDING'): Promise<ManualKycQueueItem[]> {
+    const SELECT_FIELDS = [
+      'id',
+      'full_name',
+      'mobile',
+      'worker_name',
+      'employer_name',
+      'employer_type',
+      'business_name',
+      'kyc_method',
+      'kyc_submitted_at',
+      'kyc_reviewed_at',
+      'kyc_reviewed_by',
+      'id_card_front_url',
+      'id_card_back_url',
+      'selfie_url',
+      'kyc_status',
+      'worker_kyc_status',
+      'employer_kyc_status',
+      'id_card_number',
+      'id_type',
+      'rejection_reason',
+      'account_status',
+      'profile_photo_url',
+      'city',
+      'created_at'
+    ].join(',');
+
+    let query = supabase.from('profiles').select(SELECT_FIELDS);
+
+    if (filterTab === 'PENDING') {
+      // 100% adherence to directive:
+      // WHERE kyc_status IN ('in_review', 'pending')
+      //    OR worker_kyc_status IN ('in_review', 'pending')
+      //    OR employer_kyc_status IN ('in_review', 'pending')
+      // ORDER BY kyc_submitted_at ASC NULLS LAST;
+      query = query
+        .or('kyc_status.in.(in_review,pending),worker_kyc_status.in.(in_review,pending),employer_kyc_status.in.(in_review,pending)')
+        .order('kyc_submitted_at', { ascending: true, nullsFirst: false })
+        .order('created_at', { ascending: false });
+    } else if (filterTab === 'WITH_DOCS') {
+      query = query
+        .not('id_card_front_url', 'is', null)
+        .order('created_at', { ascending: false });
+    } else if (filterTab === 'APPROVED') {
+      query = query
+        .eq('kyc_status', 'approved')
+        .not('id_card_front_url', 'is', null)
+        .order('kyc_reviewed_at', { ascending: false, nullsFirst: false });
+    } else {
+      query = query.order('created_at', { ascending: false });
+    }
+
+    const { data, error } = await query.limit(200);
+
+    if (error) {
+      console.error('Supabase fetchManualKycQueue error:', error);
+      throw new Error(`Failed to fetch KYC review queue from Supabase: ${error.message}`);
+    }
+
+    const rows = (data || []) as any[];
+
+    return rows.map((p) => {
+      const isEmployer = Boolean(p.employer_name || p.business_name || p.employer_type);
+      const role: RoleType = isEmployer && !p.worker_name ? 'employer' : 'worker';
+      const hasDocuments = Boolean(p.id_card_front_url || p.id_card_back_url || p.selfie_url);
+
+      const resolvedName = 
+        String(p.full_name || p.worker_name || p.employer_name || p.business_name || 'Anonymous User').trim();
+
+      return {
+        id: p.id,
+        fullName: resolvedName,
+        mobile: p.mobile || 'Not Provided',
+        role,
+        workerName: p.worker_name || undefined,
+        employerName: p.employer_name || undefined,
+        businessName: p.business_name || undefined,
+        employerType: p.employer_type || undefined,
+        kycMethod: p.kyc_method || 'manual_upload',
+        kycSubmittedAt: p.kyc_submitted_at || null,
+        kycReviewedAt: p.kyc_reviewed_at || null,
+        kycReviewedBy: p.kyc_reviewed_by || null,
+        idCardFrontUrl: p.id_card_front_url || null,
+        idCardBackUrl: p.id_card_back_url || null,
+        selfieUrl: p.selfie_url || null,
+        workerKycStatus: p.worker_kyc_status || 'not_started',
+        employerKycStatus: p.employer_kyc_status || 'not_started',
+        kycStatus: p.kyc_status || 'not_started',
+        idCardNumber: p.id_card_number || null,
+        idType: p.id_type || null,
+        rejectionReason: p.rejection_reason || null,
+        accountStatus: p.account_status || 'active',
+        hasDocuments,
+        avatarUrl: p.profile_photo_url || p.selfie_url || '',
+        city: p.city || undefined,
+        createdAt: p.created_at || '',
+      };
+    });
+  },
+
+  async adjudicateManualKyc(payload: {
+    userId: string;
+    status: 'approved' | 'rejected';
+    extractedAadhaarNumber?: string;
+    rejectionReason?: string;
+    role: RoleType;
+    adminId?: string;
+  }): Promise<void> {
+    if (!payload.userId) {
+      throw new Error('User ID is required for adjudication.');
+    }
+
+    if (payload.status === 'approved') {
+      const cleanAadhaar = cleanAadhaarDigits(payload.extractedAadhaarNumber);
+      if (cleanAadhaar.length !== 12) {
+        throw new Error('A valid 12-digit Aadhaar number is required to approve KYC.');
+      }
+
+      const updateObj: any = {
+        id_card_number: cleanAadhaar,
+        id_type: 'aadhaar',
+        kyc_status: 'approved',
+        kyc_reviewed_at: new Date().toISOString(),
+        kyc_reviewed_by: payload.adminId || 'admin_manual',
+        rejection_reason: null,
+        account_status: 'active'
+      };
+
+      if (payload.role === 'worker') {
+        updateObj.worker_kyc_status = 'approved';
+      } else if (payload.role === 'employer') {
+        updateObj.employer_kyc_status = 'approved';
+      } else {
+        updateObj.worker_kyc_status = 'approved';
+        updateObj.employer_kyc_status = 'approved';
+      }
+
+      const { error } = await supabase
+        .from('profiles')
+        .update(updateObj)
+        .eq('id', payload.userId);
+
+      if (error) {
+        console.error('Supabase approve error:', error);
+        throw new Error(`Failed to approve KYC in Supabase: ${error.message}`);
+      }
+    } else if (payload.status === 'rejected') {
+      const reason = (payload.rejectionReason || '').trim();
+      if (!reason) {
+        throw new Error('Please enter or select a rejection reason before rejecting.');
+      }
+
+      const updateObj: any = {
+        kyc_status: 'rejected',
+        rejection_reason: reason,
+        kyc_reviewed_at: new Date().toISOString(),
+        kyc_reviewed_by: payload.adminId || 'admin_manual'
+      };
+
+      if (payload.role === 'worker') {
+        updateObj.worker_kyc_status = 'rejected';
+      } else if (payload.role === 'employer') {
+        updateObj.employer_kyc_status = 'rejected';
+      } else {
+        updateObj.worker_kyc_status = 'rejected';
+        updateObj.employer_kyc_status = 'rejected';
+      }
+
+      const { error } = await supabase
+        .from('profiles')
+        .update(updateObj)
+        .eq('id', payload.userId);
+
+      if (error) {
+        console.error('Supabase reject error:', error);
+        throw new Error(`Failed to reject KYC in Supabase: ${error.message}`);
+      }
+    }
+
+    invalidateProfilesCache();
+  },
+
+  async approveKyc(userId: string, roleType: RoleType, extractedAadhaarNumber?: string): Promise<void> {
+    const cleanAadhaar = extractedAadhaarNumber ? cleanAadhaarDigits(extractedAadhaarNumber) : undefined;
+    const updateObj: any = { 
       kyc_status: 'approved', 
-      worker_kyc_status: 'approved', 
-      employer_kyc_status: 'approved', 
-      account_status: 'active' 
+      account_status: 'active',
+      kyc_reviewed_at: new Date().toISOString(),
+      kyc_reviewed_by: 'admin_manual',
+      rejection_reason: null
     };
+
+    if (cleanAadhaar && cleanAadhaar.length === 12) {
+      updateObj.id_card_number = cleanAadhaar;
+      updateObj.id_type = 'aadhaar';
+    }
+
+    if (roleType === 'worker') {
+      updateObj.worker_kyc_status = 'approved';
+    } else if (roleType === 'employer') {
+      updateObj.employer_kyc_status = 'approved';
+    } else {
+      updateObj.worker_kyc_status = 'approved';
+      updateObj.employer_kyc_status = 'approved';
+    }
 
     const { error } = await supabase
       .from('profiles')
@@ -548,15 +757,26 @@ export const adminApi = {
     invalidateProfilesCache();
   },
 
-  async rejectKyc(userId: string, reason: string): Promise<void> {
+  async rejectKyc(userId: string, reason: string, roleType?: RoleType): Promise<void> {
+    const updateObj: any = {
+      kyc_status: 'rejected',
+      rejection_reason: reason,
+      kyc_reviewed_at: new Date().toISOString(),
+      kyc_reviewed_by: 'admin_manual'
+    };
+
+    if (roleType === 'worker') {
+      updateObj.worker_kyc_status = 'rejected';
+    } else if (roleType === 'employer') {
+      updateObj.employer_kyc_status = 'rejected';
+    } else {
+      updateObj.worker_kyc_status = 'rejected';
+      updateObj.employer_kyc_status = 'rejected';
+    }
+
     const { error } = await supabase
       .from('profiles')
-      .update({
-        kyc_status: 'rejected',
-        worker_kyc_status: 'rejected',
-        employer_kyc_status: 'rejected',
-        rejection_reason: reason
-      })
+      .update(updateObj)
       .eq('id', userId);
 
     if (error) {

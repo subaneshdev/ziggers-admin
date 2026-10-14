@@ -376,5 +376,31 @@ export interface DailyGrowthTrendRecord {
   applications: DayJobApplicationRecord[];
 }
 
-
-
+export interface ManualKycQueueItem {
+  id: string;
+  fullName: string;
+  mobile: string;
+  role: RoleType;
+  workerName?: string;
+  employerName?: string;
+  businessName?: string;
+  employerType?: string;
+  kycMethod?: string;
+  kycSubmittedAt?: string | null;
+  kycReviewedAt?: string | null;
+  kycReviewedBy?: string | null;
+  idCardFrontUrl?: string | null;
+  idCardBackUrl?: string | null;
+  selfieUrl?: string | null;
+  workerKycStatus?: string;
+  employerKycStatus?: string;
+  kycStatus?: string;
+  idCardNumber?: string | null;
+  idType?: string | null;
+  rejectionReason?: string | null;
+  accountStatus?: string;
+  hasDocuments: boolean;
+  avatarUrl?: string;
+  city?: string;
+  createdAt: string;
+}

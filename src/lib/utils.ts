@@ -241,3 +241,64 @@ export function calculateHourlyPayRate(payout: number, estimatedHours: number): 
   if (estimatedHours <= 0) return payout;
   return Number((payout / estimatedHours).toFixed(2));
 }
+
+// ==========================================
+// 7. KYC & Aadhaar Extraction Helpers
+// ==========================================
+
+export function cleanAadhaarDigits(value?: string | null): string {
+  if (!value) return '';
+  return String(value).replace(/\D/g, '').slice(0, 12);
+}
+
+export function formatAadhaarNumber(value?: string | null): string {
+  const digits = cleanAadhaarDigits(value);
+  if (!digits) return '';
+  const parts: string[] = [];
+  for (let i = 0; i < digits.length; i += 4) {
+    parts.push(digits.slice(i, i + 4));
+  }
+  return parts.join(' ');
+}
+
+export function isValidAadhaarNumber(value?: string | null): boolean {
+  return cleanAadhaarDigits(value).length === 12;
+}
+
+export function normalizeImageUrl(url?: string | null): string {
+  if (!url) return '';
+  const trimmed = String(url).trim();
+  if (!trimmed) return '';
+  
+  // Ignore verification reference tokens that are not images
+  if (trimmed.startsWith('MC_DL:') || trimmed.startsWith('MC_EKYC_') || trimmed.startsWith('MC_') || trimmed.startsWith('REF:')) {
+    return '';
+  }
+  
+  // Standard URLs and Data URIs
+  if (
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://') ||
+    trimmed.startsWith('data:image/') ||
+    trimmed.startsWith('blob:')
+  ) {
+    return trimmed;
+  }
+  
+  // Raw base64 JPEG
+  if (trimmed.startsWith('/9j/') || trimmed.startsWith('/9j')) {
+    return `data:image/jpeg;base64,${trimmed}`;
+  }
+  
+  // Raw base64 PNG
+  if (trimmed.startsWith('iVBORw0KGgo')) {
+    return `data:image/png;base64,${trimmed}`;
+  }
+  
+  // Raw base64 WebP
+  if (trimmed.startsWith('UklGR')) {
+    return `data:image/webp;base64,${trimmed}`;
+  }
+
+  return trimmed;
+}

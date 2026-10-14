@@ -8,6 +8,7 @@ import { AdminLayout } from '../components/layout/AdminLayout';
 // Route-level code splitting: loads heavy screens (and recharts/leaflet) on demand
 const LoginScreen = React.lazy(() => import('../features/auth/LoginScreen').then(m => ({ default: m.LoginScreen })));
 const AdminDashboard = React.lazy(() => import('../features/dashboard/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
+const ManualKycReviewScreen = React.lazy(() => import('../features/kyc/ManualKycReviewScreen').then(m => ({ default: m.ManualKycReviewScreen })));
 const VerificationQueueScreen = React.lazy(() => import('../features/kyc/VerificationQueueScreen').then(m => ({ default: m.VerificationQueueScreen })));
 const KycDetailScreen = React.lazy(() => import('../features/kyc/KycDetailScreen').then(m => ({ default: m.KycDetailScreen })));
 const DisputeResolutionScreen = React.lazy(() => import('../features/disputes/DisputeResolutionScreen').then(m => ({ default: m.DisputeResolutionScreen })));
@@ -59,6 +60,7 @@ export const App: React.FC = () => {
                 <Route index element={<Navigate to="/admin/dashboard" replace />} />
                 <Route path="dashboard" element={<AdminDashboard />} />
                 <Route path="zigs" element={<PostedZigsScreen />} />
+                <Route path="kyc/review" element={<ManualKycReviewScreen />} />
                 <Route path="kyc/queue" element={<VerificationQueueScreen />} />
                 <Route path="kyc/:userId" element={<KycDetailScreen />} />
                 <Route path="disputes" element={<DisputeResolutionScreen />} />

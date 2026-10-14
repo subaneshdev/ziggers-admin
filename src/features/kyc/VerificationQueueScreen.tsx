@@ -13,15 +13,18 @@ import {
   Mail,
   MapPin,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  ShieldCheck
 } from 'lucide-react';
 import { adminApi } from '../../lib/adminApi';
 import { formatDate } from '../../lib/utils';
+import { ManualKycReviewScreen } from './ManualKycReviewScreen';
 
 const PAGE_SIZE = 50;
 
 export const VerificationQueueScreen: React.FC = () => {
   const navigate = useNavigate();
+  const [viewMode, setViewMode] = useState<'queue' | 'directory'>('queue');
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<'ALL' | 'worker' | 'employer'>('ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'NOT_STARTED' | 'APPROVED' | 'REJECTED'>('ALL');
@@ -71,6 +74,31 @@ export const VerificationQueueScreen: React.FC = () => {
   const approvedCount = users.filter(u => u.kycStatus === 'APPROVED').length;
   const rejectedCount = users.filter(u => u.kycStatus === 'REJECTED').length;
 
+  if (viewMode === 'queue') {
+    return (
+      <div className="space-y-4 font-poppins">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-[#F8F5EE] p-3 rounded-2xl border border-[#EBE4D8]">
+          <div className="flex items-center space-x-2">
+            <span className="p-1 rounded-lg bg-[#C69432]/10 text-[#C69432]">
+              <ShieldCheck className="w-4 h-4" />
+            </span>
+            <span className="text-xs font-bold text-[#2C221E]">
+              Manual KYC Review Queue (Side-by-Side Visual Proofs & 12-Digit Aadhaar Extraction)
+            </span>
+          </div>
+          <button
+            onClick={() => setViewMode('directory')}
+            className="px-3.5 py-1.5 rounded-xl bg-[#FFFFFF] hover:bg-[#F0EBE1] text-[#2C221E] font-bold text-xs inline-flex items-center space-x-1.5 transition-colors border border-[#EBE4D8] shadow-xs"
+          >
+            <Eye className="w-3.5 h-3.5 text-[#C69432]" />
+            <span>Switch to Directory Table View ({users.length} Users)</span>
+          </button>
+        </div>
+        <ManualKycReviewScreen />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5 font-poppins text-xs text-[#2C221E]">
       {/* Header */}
@@ -83,6 +111,14 @@ export const VerificationQueueScreen: React.FC = () => {
             Adjudicate registered worker & employer identities directly from Supabase PostgreSQL profiles ({users.length} total accounts)
           </p>
         </div>
+
+        <button
+          onClick={() => setViewMode('queue')}
+          className="px-4 py-2 rounded-xl bg-[#2C221E] hover:bg-[#3D2F2A] text-white font-bold text-xs inline-flex items-center space-x-2 shadow-sm transition-colors shrink-0"
+        >
+          <ShieldCheck className="w-4 h-4 text-[#C69432]" />
+          <span>Open Manual KYC Review Queue</span>
+        </button>
       </div>
 
       {/* Overview Stat Cards */}
