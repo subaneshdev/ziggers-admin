@@ -723,14 +723,8 @@ export const adminApi = {
         account_status: 'active'
       };
 
-      if (payload.role === 'worker') {
-        updateObj.worker_kyc_status = 'approved';
-      } else if (payload.role === 'employer') {
-        updateObj.employer_kyc_status = 'approved';
-      } else {
-        updateObj.worker_kyc_status = 'approved';
-        updateObj.employer_kyc_status = 'approved';
-      }
+      updateObj.worker_kyc_status = 'approved';
+      updateObj.employer_kyc_status = 'approved';
 
       const { error } = await supabase
         .from('profiles')
@@ -746,17 +740,10 @@ export const adminApi = {
         kyc_status: 'rejected',
         rejection_reason: validatedReason,
         kyc_reviewed_at: new Date().toISOString(),
-        kyc_reviewed_by: payload.adminId || 'admin_manual'
+        kyc_reviewed_by: payload.adminId || 'admin_manual',
+        worker_kyc_status: 'rejected',
+        employer_kyc_status: 'rejected'
       };
-
-      if (payload.role === 'worker') {
-        updateObj.worker_kyc_status = 'rejected';
-      } else if (payload.role === 'employer') {
-        updateObj.employer_kyc_status = 'rejected';
-      } else {
-        updateObj.worker_kyc_status = 'rejected';
-        updateObj.employer_kyc_status = 'rejected';
-      }
 
       const { error } = await supabase
         .from('profiles')

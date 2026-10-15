@@ -38,7 +38,7 @@ export const KycDetailScreen: React.FC = () => {
   const { userId = '' } = useParams<{ userId: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { success, error } = useToast();
+  const { success, error, warning } = useToast();
 
   const [extractedAadhaar, setExtractedAadhaar] = useState<string>('');
   const [isRejectModalOpen, setIsRejectModalOpen] = useState<boolean>(false);
@@ -91,6 +91,18 @@ export const KycDetailScreen: React.FC = () => {
     },
     onError: (err: any) => error('Approval Failed', err.message || 'Could not approve KYC.'),
   });
+
+  const handleApproveClick = () => {
+    if (approveMutation.isPending) return;
+    if (cleanDigits.length !== 12) {
+      warning(
+        '12-Digit Aadhaar Required',
+        `Please enter or confirm the applicant's 12-digit Aadhaar number in the extraction box before approving (currently ${cleanDigits.length}/12 digits entered).`
+      );
+      return;
+    }
+    approveMutation.mutate();
+  };
 
   const rejectMutation = useMutation({
     mutationFn: () => {
@@ -178,14 +190,14 @@ export const KycDetailScreen: React.FC = () => {
           </button>
           {detail.kycStatus !== 'APPROVED' && (
             <button
-              onClick={() => approveMutation.mutate()}
-              disabled={approveMutation.isPending || !isAadhaarValid}
-              className={`px-3.5 py-2 rounded-xl font-bold text-xs transition-colors inline-flex items-center space-x-1.5 shadow-sm ${
+              onClick={handleApproveClick}
+              disabled={approveMutation.isPending}
+              className={`px-3.5 py-2 rounded-xl font-bold text-xs transition-colors inline-flex items-center space-x-1.5 shadow-sm cursor-pointer ${
                 isAadhaarValid && !approveMutation.isPending
-                  ? 'bg-[#0F8B5F] hover:bg-[#0C6F4C] text-white cursor-pointer'
-                  : 'bg-[#0F8B5F]/40 text-white/70 cursor-not-allowed'
+                  ? 'bg-[#0F8B5F] hover:bg-[#0C6F4C] text-white active:scale-95'
+                  : 'bg-[#0F8B5F]/85 hover:bg-[#0F8B5F] text-white'
               }`}
-              title={!isAadhaarValid ? 'Enter 12-digit Aadhaar number before approving' : 'Approve KYC'}
+              title={isAadhaarValid ? 'Approve KYC' : 'Click to approve (will guide you if 12 digits missing)'}
             >
               <CheckCircle2 className="w-3.5 h-3.5" />
               <span>Approve KYC</span>
@@ -476,12 +488,12 @@ export const KycDetailScreen: React.FC = () => {
             />
             {detail.kycStatus !== 'APPROVED' && (
               <button
-                onClick={() => approveMutation.mutate()}
-                disabled={!isAadhaarValid || approveMutation.isPending}
-                className={`py-2.5 px-5 rounded-xl font-bold text-xs inline-flex items-center space-x-1.5 transition-all ${
+                onClick={handleApproveClick}
+                disabled={approveMutation.isPending}
+                className={`py-2.5 px-5 rounded-xl font-bold text-xs inline-flex items-center space-x-1.5 transition-all cursor-pointer ${
                   isAadhaarValid && !approveMutation.isPending
-                    ? 'bg-[#0F8B5F] hover:bg-[#0C6F4C] text-white'
-                    : 'bg-[#0F8B5F]/40 text-white/70 cursor-not-allowed'
+                    ? 'bg-[#0F8B5F] hover:bg-[#0C6F4C] text-white active:scale-95'
+                    : 'bg-[#0F8B5F]/85 hover:bg-[#0F8B5F] text-white'
                 }`}
               >
                 <CheckCircle2 className="w-4 h-4" />
