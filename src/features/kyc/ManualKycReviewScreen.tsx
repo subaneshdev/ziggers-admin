@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -25,9 +25,9 @@ import {
   Sparkles,
   ArrowRight,
   X,
-  List,
-  Columns,
-  Image as ImageIcon
+  Calendar,
+  Layers,
+  CheckSquare
 } from 'lucide-react';
 import { adminApi } from '../../lib/adminApi';
 import { 
@@ -45,15 +45,25 @@ type QueueFilterTab = 'PENDING' | 'WITH_DOCS' | 'APPROVED' | 'ALL';
 interface ImageCardState {
   zoom: number;
   rotation: number;
+  panX: number;
+  panY: number;
 }
+
+const INITIAL_IMAGE_STATE: ImageCardState = {
+  zoom: 1,
+  rotation: 0,
+  panX: 0,
+  panY: 0,
+};
 
 export const ManualKycReviewScreen: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { success, error, warning } = useToast();
+  const { success, error, warning, info } = useToast();
 
   const [activeTab, setActiveTab] = useState<QueueFilterTab>('PENDING');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [autoRefreshSecs, setAutoRefreshSecs] = useState<number>(15); // default 15s live polling
   
   // Inspection Dialog / Modal State
   const [reviewingApplicant, setReviewingApplicant] = useState<ManualKycQueueItem | null>(null);
@@ -69,17 +79,28 @@ export const ManualKycReviewScreen: React.FC = () => {
   const [lightboxZoom, setLightboxZoom] = useState<number>(1);
   const [lightboxRotation, setLightboxRotation] = useState<number>(0);
 
-  // Zoom & rotation state for the 3 side-by-side cards inside the inspection dialog
-  const [frontCardState, setFrontCardState] = useState<ImageCardState>({ zoom: 1, rotation: 0 });
-  const [backCardState, setBackCardState] = useState<ImageCardState>({ zoom: 1, rotation: 0 });
-  const [selfieCardState, setSelfieCardState] = useState<ImageCardState>({ zoom: 1, rotation: 0 });
+  // Zoom, rotation, & pan state for the 3 side-by-side cards inside the inspection dialog
+  const [frontCardState, setFrontCardState] = useState<ImageCardState>(INITIAL_IMAGE_STATE);
+  const [selfieCardState, setSelfieCardState] = useState<ImageCardState>(INITIAL_IMAGE_STATE);
+  const [backCardState, setBackCardState] = useState<ImageCardState>(INITIAL_IMAGE_STATE);
 
-  // Query queue items from Supabase
+  // Query queue items from Supabase & Backend
   const { data: queue = [], isLoading, isFetching, refetch } = useQuery({
     queryKey: ['manualKycQueue', activeTab],
     queryFn: () => adminApi.fetchManualKycQueue(activeTab),
-    staleTime: 30000,
+    staleTime: 10000,
+    refetchInterval: autoRefreshSecs > 0 ? autoRefreshSecs * 1000 : false,
   });
+
+  // Calculate total pending manual reviews
+  const pendingCount = useMemo(() => {
+    return queue.filter((i) => {
+      const k = String(i.kycStatus || '').toLowerCase();
+      const wk = String(i.workerKycStatus || '').toLowerCase();
+      const ek = String(i.employerKycStatus || '').toLowerCase();
+      return k === 'pending' || k === 'in_review' || wk === 'pending' || wk === 'in_review' || ek === 'pending' || ek === 'in_review';
+    }).length;
+  }, [queue]);
 
   // Filter queue by search query
   const filteredQueue = useMemo(() => {
@@ -87,6 +108,7 @@ export const ManualKycReviewScreen: React.FC = () => {
     if (!q) return queue;
     return queue.filter((item) => 
       item.fullName.toLowerCase().includes(q) ||
+      (item.legalName && item.legalName.toLowerCase().includes(q)) ||
       item.mobile.toLowerCase().includes(q) ||
       item.id.toLowerCase().includes(q) ||
       (item.idCardNumber && item.idCardNumber.includes(q))
@@ -108,9 +130,9 @@ export const ManualKycReviewScreen: React.FC = () => {
     } else {
       setExtractedAadhaar('');
     }
-    setFrontCardState({ zoom: 1, rotation: 0 });
-    setBackCardState({ zoom: 1, rotation: 0 });
-    setSelfieCardState({ zoom: 1, rotation: 0 });
+    setFrontCardState(INITIAL_IMAGE_STATE);
+    setSelfieCardState(INITIAL_IMAGE_STATE);
+    setBackCardState(INITIAL_IMAGE_STATE);
     setRejectionReason('');
     setIsRejectModalOpen(false);
   };
@@ -149,7 +171,7 @@ export const ManualKycReviewScreen: React.FC = () => {
     setTimeout(() => setIsCopiedId(false), 2000);
   };
 
-  // Approval Mutation
+  // Approval Mutation with Optimistic UI updates
   const approveMutation = useMutation({
     mutationFn: async () => {
       if (!reviewingApplicant) throw new Error('No applicant selected');
@@ -162,14 +184,29 @@ export const ManualKycReviewScreen: React.FC = () => {
         adminId: 'admin_console',
       });
     },
+    onMutate: async () => {
+      if (!reviewingApplicant) return;
+      const targetId = reviewingApplicant.id;
+      // Optimistically update React Query cache
+      queryClient.setQueryData<ManualKycQueueItem[]>(['manualKycQueue', activeTab], (old = []) => {
+        if (activeTab === 'PENDING') {
+          return old.filter((item) => item.id !== targetId);
+        }
+        return old.map((item) => 
+          item.id === targetId 
+            ? { ...item, kycStatus: 'approved', idCardNumber: cleanDigits, idType: 'aadhaar' } 
+            : item
+        );
+      });
+    },
     onSuccess: () => {
-      success('KYC Approved', `Profile ${reviewingApplicant?.fullName} successfully verified with Aadhaar ${formatAadhaarNumber(cleanDigits)}.`);
+      success('KYC Approved & Verified', `Profile ${reviewingApplicant?.fullName} successfully verified with Aadhaar ${formatAadhaarNumber(cleanDigits)}.`);
       queryClient.invalidateQueries({ queryKey: ['manualKycQueue'] });
       queryClient.invalidateQueries({ queryKey: ['verificationQueueUsers'] });
       queryClient.invalidateQueries({ queryKey: ['kycDetail'] });
       refetch();
       
-      // Auto move to next applicant or close if at end
+      // Auto move to next applicant or close if queue is finished
       if (currentReviewIndex >= 0 && currentReviewIndex < filteredQueue.length - 1) {
         handleOpenReview(filteredQueue[currentReviewIndex + 1]);
       } else {
@@ -178,10 +215,11 @@ export const ManualKycReviewScreen: React.FC = () => {
     },
     onError: (err: any) => {
       error('Approval Failed', err.message || 'Could not approve KYC.');
+      refetch();
     },
   });
 
-  // Rejection Mutation
+  // Rejection Mutation with Optimistic UI updates
   const rejectMutation = useMutation({
     mutationFn: async () => {
       if (!reviewingApplicant) throw new Error('No applicant selected');
@@ -192,6 +230,21 @@ export const ManualKycReviewScreen: React.FC = () => {
         rejectionReason: rejectionReason.trim(),
         role: reviewingApplicant.role,
         adminId: 'admin_console',
+      });
+    },
+    onMutate: async () => {
+      if (!reviewingApplicant) return;
+      const targetId = reviewingApplicant.id;
+      // Optimistically update React Query cache
+      queryClient.setQueryData<ManualKycQueueItem[]>(['manualKycQueue', activeTab], (old = []) => {
+        if (activeTab === 'PENDING') {
+          return old.filter((item) => item.id !== targetId);
+        }
+        return old.map((item) => 
+          item.id === targetId 
+            ? { ...item, kycStatus: 'rejected', rejectionReason: rejectionReason.trim() } 
+            : item
+        );
       });
     },
     onSuccess: () => {
@@ -211,6 +264,7 @@ export const ManualKycReviewScreen: React.FC = () => {
     },
     onError: (err: any) => {
       error('Rejection Failed', err.message || 'Could not reject KYC.');
+      refetch();
     },
   });
 
@@ -223,25 +277,25 @@ export const ManualKycReviewScreen: React.FC = () => {
     '12-digit Aadhaar number is obscured or unreadable.'
   ];
 
-  const handleCardZoom = (card: 'front' | 'back' | 'selfie', delta: number) => {
-    const setter = card === 'front' ? setFrontCardState : card === 'back' ? setBackCardState : setSelfieCardState;
+  const handleCardZoom = (card: 'front' | 'selfie' | 'back', delta: number) => {
+    const setter = card === 'front' ? setFrontCardState : card === 'selfie' ? setSelfieCardState : setBackCardState;
     setter((prev) => ({
       ...prev,
-      zoom: Math.max(0.8, Math.min(3.0, Number((prev.zoom + delta).toFixed(1)))),
+      zoom: Math.max(0.8, Math.min(3.5, Number((prev.zoom + delta).toFixed(1)))),
     }));
   };
 
-  const handleCardRotate = (card: 'front' | 'back' | 'selfie') => {
-    const setter = card === 'front' ? setFrontCardState : card === 'back' ? setBackCardState : setSelfieCardState;
+  const handleCardRotate = (card: 'front' | 'selfie' | 'back') => {
+    const setter = card === 'front' ? setFrontCardState : card === 'selfie' ? setSelfieCardState : setBackCardState;
     setter((prev) => ({
       ...prev,
       rotation: (prev.rotation + 90) % 360,
     }));
   };
 
-  const handleCardReset = (card: 'front' | 'back' | 'selfie') => {
-    const setter = card === 'front' ? setFrontCardState : card === 'back' ? setBackCardState : setSelfieCardState;
-    setter({ zoom: 1, rotation: 0 });
+  const handleCardReset = (card: 'front' | 'selfie' | 'back') => {
+    const setter = card === 'front' ? setFrontCardState : card === 'selfie' ? setSelfieCardState : setBackCardState;
+    setter(INITIAL_IMAGE_STATE);
   };
 
   const openLightbox = (url?: string | null, title: string = 'ID Document') => {
@@ -257,24 +311,32 @@ export const ManualKycReviewScreen: React.FC = () => {
 
   return (
     <div className="space-y-4 font-poppins text-xs text-[#2C221E] pb-10">
-      {/* 1. Page Header & Filter Tabs */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-[#FFFFFF] p-4 sm:p-5 rounded-2xl border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
+      {/* 1. Header & Live Queue Statistics */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-[#FFFFFF] p-4 sm:p-5 rounded-2xl border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)]">
         <div>
-          <div className="flex items-center space-x-2">
-            <span className="p-1.5 rounded-lg bg-[#C69432]/10 text-[#C69432]">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span className="p-2 rounded-xl bg-[#C69432]/10 text-[#C69432]">
               <ShieldCheck className="w-5 h-5" />
             </span>
             <h1 className="text-base sm:text-lg font-bold text-[#2C221E] tracking-tight">
-              KYC Verification & Aadhaar Extraction Queue
+              Manual KYC Adjudication Dashboard
             </h1>
+
+            {/* Badge displaying total pending manual reviews */}
+            <span className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-[#D97706]/15 text-[#D97706] border border-[#D97706]/30 font-numeric font-bold text-xs">
+              <span className="w-2 h-2 rounded-full bg-[#D97706] animate-pulse" />
+              <span>{pendingCount} Pending Manual Reviews</span>
+            </span>
           </div>
-          <p className="text-[11px] text-[#665C54] mt-0.5">
-            Click <strong>"Review"</strong> on any applicant to open the side-by-side Aadhaar front, back, and live selfie inspection dialog.
+
+          <p className="text-[11px] text-[#665C54] mt-1">
+            Inspect uploaded ID documents, compare live selfie against Aadhaar front photo, extract the 12-digit Aadhaar number, and adjudicate applications.
           </p>
         </div>
 
-        {/* Tab Controls & Search */}
+        {/* Top Controls: Filter Tabs, Auto-Refresh Toggle, Search & Manual Refresh */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Filter Tabs */}
           <div className="bg-[#F0EBE1] p-1 rounded-xl flex items-center space-x-1 border border-[#EBE4D8]">
             <button
               onClick={() => setActiveTab('PENDING')}
@@ -284,7 +346,7 @@ export const ManualKycReviewScreen: React.FC = () => {
                   : 'text-[#665C54] hover:text-[#2C221E]'
               }`}
             >
-              Pending Submissions {activeTab === 'PENDING' && !isLoading && `(${queue.length})`}
+              Pending Queue {activeTab === 'PENDING' && !isLoading && `(${queue.length})`}
             </button>
             <button
               onClick={() => setActiveTab('WITH_DOCS')}
@@ -308,33 +370,58 @@ export const ManualKycReviewScreen: React.FC = () => {
             </button>
           </div>
 
+          {/* Auto-Refresh Toggle */}
+          <div className="flex items-center space-x-1 bg-[#F0EBE1] px-2 py-1 rounded-xl border border-[#EBE4D8]">
+            <span className="text-[10px] text-[#665C54] font-bold uppercase tracking-wider mr-1 hidden sm:inline">
+              Auto:
+            </span>
+            {[0, 15, 30].map((secs) => (
+              <button
+                key={secs}
+                onClick={() => setAutoRefreshSecs(secs)}
+                className={`px-2 py-1 rounded-lg text-[10px] font-bold font-numeric transition-colors ${
+                  autoRefreshSecs === secs
+                    ? 'bg-[#2C221E] text-white shadow-xs'
+                    : 'text-[#665C54] hover:text-[#2C221E]'
+                }`}
+              >
+                {secs === 0 ? 'Off' : `${secs}s`}
+              </button>
+            ))}
+            {autoRefreshSecs > 0 && (
+              <span className="w-1.5 h-1.5 rounded-full bg-[#0F8B5F] animate-pulse ml-1" title="Live Auto-Refresh Active" />
+            )}
+          </div>
+
+          {/* Search Box */}
           <div className="relative">
             <Search className="w-3.5 h-3.5 text-[#8C827A] absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search applicant name, mobile..."
+              placeholder="Search legal name, mobile..."
               className="bg-[#F8F5EE] border border-[#EBE4D8] rounded-xl pl-8 pr-3 py-1.5 text-xs text-[#2C221E] placeholder-[#8C827A] focus:outline-none focus:border-[#C69432]"
             />
           </div>
 
+          {/* Manual Refresh Button */}
           <button
             onClick={() => refetch()}
             disabled={isFetching}
             className="p-2 rounded-xl bg-[#F0EBE1] hover:bg-[#EBE4D8] text-[#2C221E] border border-[#EBE4D8] transition-colors"
-            title="Refresh Queue from Supabase"
+            title="Refresh KYC Queue"
           >
             <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin text-[#C69432]' : ''}`} />
           </button>
         </div>
       </div>
 
-      {/* 2. Pending KYC Table / List */}
+      {/* 2. Pending KYC Table View */}
       {isLoading ? (
         <div className="p-12 rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] flex flex-col items-center justify-center space-y-3 animate-pulse">
           <div className="w-8 h-8 border-3 border-[#C69432] border-t-transparent rounded-full animate-spin" />
-          <span className="text-xs font-semibold text-[#8C827A]">Loading KYC review queue from Supabase PostgreSQL...</span>
+          <span className="text-xs font-semibold text-[#8C827A]">Loading manual KYC verification queue...</span>
         </div>
       ) : filteredQueue.length === 0 ? (
         /* Empty State */
@@ -343,13 +430,13 @@ export const ManualKycReviewScreen: React.FC = () => {
             <CheckCircle2 className="w-8 h-8" />
           </div>
           <h3 className="text-sm sm:text-base font-bold text-[#2C221E]">
-            {activeTab === 'PENDING' ? 'No Pending Submissions in Queue' : 'No Profiles Found'}
+            {activeTab === 'PENDING' ? 'No Pending Manual KYC Reviews' : 'No Profiles Found'}
           </h3>
           <p className="text-xs text-[#665C54] max-w-md">
             {activeTab === 'PENDING' ? (
               <>
-                All KYC submissions in <code className="bg-[#F0EBE1] px-1 py-0.5 rounded text-[#2C221E]">in_review</code> and <code className="bg-[#F0EBE1] px-1 py-0.5 rounded text-[#2C221E]">pending</code> have been adjudicated.
-                Switch to the <strong>"Uploaded ID Proofs"</strong> tab to inspect existing users with submitted documents.
+                All manual document KYC submissions have been adjudicated.
+                Instant Message Central verifications are automatically handled without manual review.
               </>
             ) : (
               'No users matched your search criteria.'
@@ -366,17 +453,17 @@ export const ManualKycReviewScreen: React.FC = () => {
           )}
         </div>
       ) : (
-        /* The Pending KYC Table/List */
+        /* Pending Queue Table */
         <div className="rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-[0_4px_20px_rgba(44,34,30,0.03)] overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-[#F8F5EE] text-[#C69432] uppercase font-numeric border-b border-[#EBE4D8]">
                 <tr>
-                  <th className="py-3 px-4">Applicant Legal Name</th>
-                  <th className="py-3 px-4">Mobile Number</th>
-                  <th className="py-3 px-4">Selected Role</th>
-                  <th className="py-3 px-4">Submission Date (IST)</th>
-                  <th className="py-3 px-4 text-center">Visual Proofs Uploaded</th>
+                  <th className="py-3 px-4">User Name</th>
+                  <th className="py-3 px-4">Mobile</th>
+                  <th className="py-3 px-4">Role</th>
+                  <th className="py-3 px-4">Submitted At</th>
+                  <th className="py-3 px-4 text-center">Visual Proofs</th>
                   <th className="py-3 px-4 text-center">Aadhaar Status</th>
                   <th className="py-3 px-4 text-right">Action</th>
                 </tr>
@@ -390,7 +477,7 @@ export const ManualKycReviewScreen: React.FC = () => {
 
                   return (
                     <tr key={item.id} className="hover:bg-[#F0EBE1]/50 transition-colors group">
-                      {/* Name & ID */}
+                      {/* User Name & Legal Name */}
                       <td className="py-3 px-4">
                         <div className="flex items-center space-x-2.5">
                           <div className="w-8 h-8 rounded-lg bg-[#2C221E] text-white flex items-center justify-center font-bold text-xs shrink-0">
@@ -400,6 +487,11 @@ export const ManualKycReviewScreen: React.FC = () => {
                             <span className="font-bold text-[#2C221E] group-hover:text-[#C69432] transition-colors block">
                               {item.fullName}
                             </span>
+                            {item.legalName && item.legalName !== item.fullName && (
+                              <span className="text-[10px] text-[#665C54] block">
+                                Legal: {item.legalName}
+                              </span>
+                            )}
                             <span className="text-[10px] text-[#8C827A] font-numeric font-normal">
                               ID: {item.id.slice(0, 8)}...
                             </span>
@@ -415,7 +507,7 @@ export const ManualKycReviewScreen: React.FC = () => {
                         </div>
                       </td>
 
-                      {/* Role */}
+                      {/* Role (Worker / Employer) */}
                       <td className="py-3 px-4 font-numeric">
                         <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
                           item.role === 'worker'
@@ -426,7 +518,7 @@ export const ManualKycReviewScreen: React.FC = () => {
                         </span>
                       </td>
 
-                      {/* Submission Date */}
+                      {/* Submitted At */}
                       <td className="py-3 px-4 font-numeric text-[#665C54] whitespace-nowrap">
                         <div className="flex items-center space-x-1">
                           <Clock className="w-3 h-3 text-[#8C827A] shrink-0" />
@@ -434,7 +526,7 @@ export const ManualKycReviewScreen: React.FC = () => {
                         </div>
                       </td>
 
-                      {/* Visual Proofs Badges */}
+                      {/* Visual Proofs Indicators */}
                       <td className="py-3 px-4 text-center">
                         <div className="inline-flex items-center space-x-1.5 font-numeric text-[10px]">
                           <span
@@ -447,45 +539,45 @@ export const ManualKycReviewScreen: React.FC = () => {
                           </span>
                           <span
                             className={`px-1.5 py-0.5 rounded font-bold ${
+                              hasSelfie ? 'bg-[#0F8B5F]/15 text-[#0F8B5F]' : 'bg-[#665C54]/15 text-[#665C54]'
+                            }`}
+                            title={hasSelfie ? 'Live Selfie Available' : 'No Live Selfie'}
+                          >
+                            Selfie {hasSelfie ? '✓' : '—'}
+                          </span>
+                          <span
+                            className={`px-1.5 py-0.5 rounded font-bold ${
                               hasBack ? 'bg-[#0F8B5F]/15 text-[#0F8B5F]' : 'bg-[#665C54]/15 text-[#665C54]'
                             }`}
                             title={hasBack ? 'Back Photo Available' : 'No Back Photo'}
                           >
                             Back {hasBack ? '✓' : '—'}
                           </span>
-                          <span
-                            className={`px-1.5 py-0.5 rounded font-bold ${
-                              hasSelfie ? 'bg-[#0F8B5F]/15 text-[#0F8B5F]' : 'bg-[#665C54]/15 text-[#665C54]'
-                            }`}
-                            title={hasSelfie ? 'Selfie Available' : 'No Selfie'}
-                          >
-                            Selfie {hasSelfie ? '✓' : '—'}
-                          </span>
                         </div>
                       </td>
 
-                      {/* Aadhaar Extracted */}
+                      {/* Aadhaar Status */}
                       <td className="py-3 px-4 text-center">
                         {has12Digits ? (
-                          <span className="inline-flex items-center space-x-1 text-[10px] font-mono font-bold text-[#0F8B5F] bg-[#0F8B5F]/10 px-2 py-0.5 rounded-full border border-[#0F8B5F]/20">
+                          <span className="inline-flex items-center space-x-1 text-[10px] font-mono font-bold text-[#0F8B5F] bg-[#0F8B5F]/10 px-2.5 py-0.5 rounded-full border border-[#0F8B5F]/20">
                             <CheckCircle2 className="w-3 h-3" />
                             <span>{formatAadhaarNumber(item.idCardNumber)}</span>
                           </span>
                         ) : (
-                          <span className="text-[10px] text-[#D97706] font-semibold bg-[#D97706]/10 px-2 py-0.5 rounded-full border border-[#D97706]/20">
+                          <span className="text-[10px] text-[#D97706] font-semibold bg-[#D97706]/10 px-2.5 py-0.5 rounded-full border border-[#D97706]/20">
                             Pending Extraction
                           </span>
                         )}
                       </td>
 
-                      {/* Action Button: Review */}
+                      {/* Action Button: Review Documents */}
                       <td className="py-3 px-4 text-right whitespace-nowrap">
                         <button
                           onClick={() => handleOpenReview(item)}
-                          className="px-3.5 py-1.5 rounded-xl bg-[#2C221E] hover:bg-[#3D2F2A] text-white font-bold text-xs inline-flex items-center space-x-1.5 shadow-sm transition-transform active:scale-95"
+                          className="px-3.5 py-1.5 rounded-xl bg-[#2C221E] hover:bg-[#3D2F2A] text-white font-bold text-xs inline-flex items-center space-x-1.5 shadow-sm transition-transform active:scale-95 cursor-pointer"
                         >
                           <Eye className="w-3.5 h-3.5 text-[#C69432]" />
-                          <span>Review</span>
+                          <span>Review Documents</span>
                         </button>
                       </td>
                     </tr>
@@ -496,16 +588,16 @@ export const ManualKycReviewScreen: React.FC = () => {
           </div>
 
           <div className="px-4 py-3 bg-[#F8F5EE] border-t border-[#EBE4D8] flex items-center justify-between text-xs text-[#665C54] font-numeric">
-            <span>Showing <strong>{filteredQueue.length}</strong> applicants waiting in queue</span>
-            <span>Click <strong>"Review"</strong> on any applicant to adjudicate</span>
+            <span>Showing <strong>{filteredQueue.length}</strong> manual submissions in queue</span>
+            <span>Click <strong>"Review Documents"</strong> to inspect photos & extract Aadhaar</span>
           </div>
         </div>
       )}
 
-      {/* 3. Side-by-Side Photo Inspection Dialog / Modal */}
+      {/* 3. Document Review Modal / Drawer */}
       {reviewingApplicant && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#2C221E]/65 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto">
-          <div className="bg-[#FFFFFF] w-full max-w-6xl rounded-3xl border border-[#EBE4D8] shadow-2xl flex flex-col max-h-[95vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-[#FFFFFF] w-full max-w-6xl rounded-3xl border border-[#EBE4D8] shadow-2xl flex flex-col max-h-[96vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             {/* Modal Header */}
             <div className="p-4 sm:p-5 bg-[#FFFFFF] border-b border-[#EBE4D8] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
               <div className="flex items-center space-x-3 min-w-0">
@@ -554,7 +646,7 @@ export const ManualKycReviewScreen: React.FC = () => {
                       onClick={handlePrevInQueue}
                       disabled={currentReviewIndex === 0}
                       className="p-1.5 rounded-lg bg-[#F0EBE1] hover:bg-[#EBE4D8] disabled:opacity-40 text-[#2C221E]"
-                      title="Previous Applicant in Queue"
+                      title="Previous Applicant"
                     >
                       <ChevronLeft className="w-4 h-4" />
                     </button>
@@ -565,7 +657,7 @@ export const ManualKycReviewScreen: React.FC = () => {
                       onClick={handleNextInQueue}
                       disabled={currentReviewIndex >= filteredQueue.length - 1}
                       className="p-1.5 rounded-lg bg-[#F0EBE1] hover:bg-[#EBE4D8] disabled:opacity-40 text-[#2C221E]"
-                      title="Next Applicant in Queue"
+                      title="Next Applicant"
                     >
                       <ChevronRight className="w-4 h-4" />
                     </button>
@@ -575,7 +667,7 @@ export const ManualKycReviewScreen: React.FC = () => {
                 <button
                   onClick={handleCloseReview}
                   className="p-2 rounded-xl bg-[#F0EBE1] hover:bg-[#EBE4D8] text-[#2C221E] transition-colors"
-                  title="Close Inspection Dialog"
+                  title="Close Review Dialog"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -584,14 +676,76 @@ export const ManualKycReviewScreen: React.FC = () => {
 
             {/* Modal Body: Scrollable inspection view */}
             <div className="p-4 sm:p-6 overflow-y-auto space-y-4">
-              {/* Side-by-Side 3-Card Photo View */}
+              {/* User Info Section: Legal Name, DOB, Gender, Mobile, Role, and Submitted Timestamp */}
+              <div className="p-3.5 sm:p-4 rounded-2xl bg-[#F8F5EE] border border-[#EBE4D8]">
+                <div className="flex items-center space-x-1.5 mb-2.5 pb-2 border-b border-[#EBE4D8]">
+                  <User className="w-4 h-4 text-[#C69432]" />
+                  <span className="text-xs font-bold text-[#2C221E] uppercase tracking-wider">
+                    Applicant Information
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-xs">
+                  <div>
+                    <span className="text-[10px] text-[#8C827A] uppercase font-bold block">Legal Name</span>
+                    <span className="font-bold text-[#2C221E] truncate block">
+                      {reviewingApplicant.legalName || reviewingApplicant.fullName}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-[#8C827A] uppercase font-bold block">Date of Birth</span>
+                    <span className="font-semibold font-numeric text-[#2C221E] block">
+                      {reviewingApplicant.dob || 'Not Provided'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-[#8C827A] uppercase font-bold block">Gender</span>
+                    <span className="font-semibold text-[#2C221E] block">
+                      {reviewingApplicant.gender ? reviewingApplicant.gender.toUpperCase() : 'Not Provided'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-[#8C827A] uppercase font-bold block">Mobile Number</span>
+                    <span className="font-semibold font-numeric text-[#2C221E] block">
+                      {reviewingApplicant.mobile}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-[#8C827A] uppercase font-bold block">Selected Role</span>
+                    <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold uppercase mt-0.5 border ${
+                      reviewingApplicant.role === 'worker'
+                        ? 'bg-[#2563EB]/10 text-[#2563EB] border-[#2563EB]/30'
+                        : 'bg-[#9333EA]/10 text-[#9333EA] border-[#9333EA]/30'
+                    }`}>
+                      {reviewingApplicant.role === 'worker' ? 'Worker' : 'Employer'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-[#8C827A] uppercase font-bold block">Submitted Timestamp</span>
+                    <span className="font-semibold font-numeric text-[#665C54] block">
+                      {formatISTTimestamp(reviewingApplicant.kycSubmittedAt || reviewingApplicant.createdAt)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Side-by-Side Photo Comparison:
+                  Card 1: Aadhaar Front
+                  Card 3: Live Selfie placed directly next to Aadhaar front photo for face match visual check
+                  Card 2: Aadhaar Back
+              */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* Card 1: Aadhaar Front */}
-                <div className="rounded-2xl bg-[#FFFFFF] border-2 border-[#C69432]/50 shadow-sm overflow-hidden flex flex-col">
+                {/* CARD 1: Aadhaar Card (Front Photo) */}
+                <div className="rounded-2xl bg-[#FFFFFF] border-2 border-[#C69432]/60 shadow-sm overflow-hidden flex flex-col">
                   <div className="p-2.5 bg-[#F8F5EE] border-b border-[#EBE4D8] flex items-center justify-between">
                     <div>
                       <div className="flex items-center space-x-1.5">
-                        <span className="w-2 h-2 rounded-full bg-[#C69432]" />
+                        <span className="w-2.5 h-2.5 rounded-full bg-[#C69432]" />
                         <span className="font-bold text-xs text-[#2C221E]">Card 1: Aadhaar Front</span>
                       </div>
                       <span className="text-[10px] text-[#C69432] font-semibold block mt-0.5">
@@ -660,12 +814,86 @@ export const ManualKycReviewScreen: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Card 2: Aadhaar Back */}
+                {/* CARD 3: Live Camera Selfie Photo (Placed directly next to Card 1 for instant Face Match!) */}
+                <div className="rounded-2xl bg-[#FFFFFF] border-2 border-[#0F8B5F]/60 shadow-sm overflow-hidden flex flex-col">
+                  <div className="p-2.5 bg-[#F8F5EE] border-b border-[#EBE4D8] flex items-center justify-between">
+                    <div>
+                      <div className="flex items-center space-x-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full bg-[#0F8B5F]" />
+                        <span className="font-bold text-xs text-[#2C221E]">Card 3: Live Selfie</span>
+                      </div>
+                      <span className="text-[10px] text-[#0F8B5F] font-semibold block mt-0.5">
+                        Face Match Visual Check
+                      </span>
+                    </div>
+
+                    <div className="flex items-center space-x-1">
+                      <button
+                        onClick={() => handleCardZoom('selfie', 0.2)}
+                        className="p-1.5 rounded-lg bg-[#FFFFFF] hover:bg-[#F0EBE1] border border-[#EBE4D8] text-[#2C221E]"
+                        title="Zoom In"
+                      >
+                        <ZoomIn className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleCardZoom('selfie', -0.2)}
+                        className="p-1.5 rounded-lg bg-[#FFFFFF] hover:bg-[#F0EBE1] border border-[#EBE4D8] text-[#2C221E]"
+                        title="Zoom Out"
+                      >
+                        <ZoomOut className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleCardRotate('selfie')}
+                        className="p-1.5 rounded-lg bg-[#FFFFFF] hover:bg-[#F0EBE1] border border-[#EBE4D8] text-[#2C221E]"
+                        title="Rotate 90° Clockwise"
+                      >
+                        <RotateCw className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => openLightbox(reviewingApplicant.selfieUrl, `${reviewingApplicant.fullName} - Camera Selfie`)}
+                        className="p-1.5 rounded-lg bg-[#2C221E] hover:bg-[#3D2F2A] text-white"
+                        title="Fullscreen Lightbox"
+                      >
+                        <Maximize2 className="w-3.5 h-3.5 text-[#C69432]" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="relative h-64 sm:h-72 bg-[#1A1614] flex items-center justify-center overflow-hidden select-none">
+                    {normalizeImageUrl(reviewingApplicant.selfieUrl) ? (
+                      <img
+                        src={normalizeImageUrl(reviewingApplicant.selfieUrl)}
+                        alt="Camera Selfie"
+                        className="max-h-full max-w-full object-contain transition-transform duration-200 cursor-grab"
+                        style={{
+                          transform: `scale(${selfieCardState.zoom}) rotate(${selfieCardState.rotation}deg)`,
+                        }}
+                        onDoubleClick={() => openLightbox(reviewingApplicant.selfieUrl, `${reviewingApplicant.fullName} - Camera Selfie`)}
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center p-6 text-center text-[#8C827A]">
+                        <User className="w-8 h-8 mb-1.5 opacity-50" />
+                        <span className="font-semibold text-xs text-white">No Live Selfie Uploaded</span>
+                        <span className="text-[10px] mt-0.5">Missing camera selfie</span>
+                      </div>
+                    )}
+                    {(selfieCardState.zoom !== 1 || selfieCardState.rotation !== 0) && (
+                      <button
+                        onClick={() => handleCardReset('selfie')}
+                        className="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-black/75 text-white text-[9px]"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* CARD 2: Aadhaar Card (Back Photo) */}
                 <div className="rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-sm overflow-hidden flex flex-col">
                   <div className="p-2.5 bg-[#F8F5EE] border-b border-[#EBE4D8] flex items-center justify-between">
                     <div>
                       <div className="flex items-center space-x-1.5">
-                        <span className="w-2 h-2 rounded-full bg-[#8C827A]" />
+                        <span className="w-2.5 h-2.5 rounded-full bg-[#8C827A]" />
                         <span className="font-bold text-xs text-[#2C221E]">Card 2: Aadhaar Back</span>
                       </div>
                       <span className="text-[10px] text-[#665C54] block mt-0.5">
@@ -733,83 +961,9 @@ export const ManualKycReviewScreen: React.FC = () => {
                     )}
                   </div>
                 </div>
-
-                {/* Card 3: Live Camera Selfie */}
-                <div className="rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] shadow-sm overflow-hidden flex flex-col">
-                  <div className="p-2.5 bg-[#F8F5EE] border-b border-[#EBE4D8] flex items-center justify-between">
-                    <div>
-                      <div className="flex items-center space-x-1.5">
-                        <span className="w-2 h-2 rounded-full bg-[#0F8B5F]" />
-                        <span className="font-bold text-xs text-[#2C221E]">Card 3: Live Selfie</span>
-                      </div>
-                      <span className="text-[10px] text-[#0F8B5F] font-semibold block mt-0.5">
-                        Face Match Inspection
-                      </span>
-                    </div>
-
-                    <div className="flex items-center space-x-1">
-                      <button
-                        onClick={() => handleCardZoom('selfie', 0.2)}
-                        className="p-1.5 rounded-lg bg-[#FFFFFF] hover:bg-[#F0EBE1] border border-[#EBE4D8] text-[#2C221E]"
-                        title="Zoom In"
-                      >
-                        <ZoomIn className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleCardZoom('selfie', -0.2)}
-                        className="p-1.5 rounded-lg bg-[#FFFFFF] hover:bg-[#F0EBE1] border border-[#EBE4D8] text-[#2C221E]"
-                        title="Zoom Out"
-                      >
-                        <ZoomOut className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleCardRotate('selfie')}
-                        className="p-1.5 rounded-lg bg-[#FFFFFF] hover:bg-[#F0EBE1] border border-[#EBE4D8] text-[#2C221E]"
-                        title="Rotate 90° Clockwise"
-                      >
-                        <RotateCw className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => openLightbox(reviewingApplicant.selfieUrl, `${reviewingApplicant.fullName} - Camera Selfie`)}
-                        className="p-1.5 rounded-lg bg-[#2C221E] hover:bg-[#3D2F2A] text-white"
-                        title="Fullscreen Lightbox"
-                      >
-                        <Maximize2 className="w-3.5 h-3.5 text-[#C69432]" />
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="relative h-64 sm:h-72 bg-[#1A1614] flex items-center justify-center overflow-hidden select-none">
-                    {normalizeImageUrl(reviewingApplicant.selfieUrl) ? (
-                      <img
-                        src={normalizeImageUrl(reviewingApplicant.selfieUrl)}
-                        alt="Camera Selfie"
-                        className="max-h-full max-w-full object-contain transition-transform duration-200 cursor-grab"
-                        style={{
-                          transform: `scale(${selfieCardState.zoom}) rotate(${selfieCardState.rotation}deg)`,
-                        }}
-                        onDoubleClick={() => openLightbox(reviewingApplicant.selfieUrl, `${reviewingApplicant.fullName} - Camera Selfie`)}
-                      />
-                    ) : (
-                      <div className="flex flex-col items-center justify-center p-6 text-center text-[#8C827A]">
-                        <User className="w-8 h-8 mb-1.5 opacity-50" />
-                        <span className="font-semibold text-xs text-white">No Live Selfie Uploaded</span>
-                        <span className="text-[10px] mt-0.5">Missing selfie</span>
-                      </div>
-                    )}
-                    {(selfieCardState.zoom !== 1 || selfieCardState.rotation !== 0) && (
-                      <button
-                        onClick={() => handleCardReset('selfie')}
-                        className="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-black/75 text-white text-[9px]"
-                      >
-                        Reset
-                      </button>
-                    )}
-                  </div>
-                </div>
               </div>
 
-              {/* Extraction Input & Adjudication Action Bar */}
+              {/* Data Extraction Input & Adjudication Action Bar */}
               <div className="p-4 sm:p-5 rounded-2xl bg-[#F8F5EE] border-2 border-[#EBE4D8] space-y-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                   <div className="flex items-center space-x-2">
@@ -819,7 +973,7 @@ export const ManualKycReviewScreen: React.FC = () => {
                     </span>
                   </div>
                   <span className={`text-[11px] font-numeric font-bold ${isAadhaarValid ? 'text-[#0F8B5F]' : 'text-[#D97706]'}`}>
-                    {isAadhaarValid ? '✓ Valid 12-Digit Format (Ready to Approve)' : `Entered: ${cleanDigits.length} / 12 Digits`}
+                    {isAadhaarValid ? '✓ Valid 12-Digit Aadhaar (Ready to Approve & Verify)' : `Entered: ${cleanDigits.length} / 12 Digits`}
                   </span>
                 </div>
 
@@ -851,7 +1005,7 @@ export const ManualKycReviewScreen: React.FC = () => {
                   </div>
 
                   <div className="md:col-span-5 flex items-center gap-2">
-                    {/* APPROVE BUTTON */}
+                    {/* APPROVE & VERIFY BUTTON */}
                     <button
                       onClick={() => approveMutation.mutate()}
                       disabled={!isAadhaarValid || approveMutation.isPending}
@@ -860,20 +1014,20 @@ export const ManualKycReviewScreen: React.FC = () => {
                           ? 'bg-[#0F8B5F] hover:bg-[#0C6F4C] text-white cursor-pointer active:scale-95'
                           : 'bg-[#0F8B5F]/35 text-white/70 cursor-not-allowed'
                       }`}
-                      title={!isAadhaarValid ? 'Enter 12-digit Aadhaar number before approving' : 'Approve KYC'}
+                      title={!isAadhaarValid ? 'Enter 12-digit Aadhaar number to approve' : 'Approve & Verify'}
                     >
                       <CheckCircle2 className="w-4 h-4" />
-                      <span>{approveMutation.isPending ? 'Saving...' : 'APPROVE'}</span>
+                      <span>{approveMutation.isPending ? 'Verifying...' : 'Approve & Verify'}</span>
                     </button>
 
                     {/* REJECT BUTTON */}
                     <button
                       onClick={() => setIsRejectModalOpen(true)}
                       disabled={rejectMutation.isPending}
-                      className="py-2.5 px-4 rounded-xl font-bold text-xs inline-flex items-center justify-center space-x-1.5 bg-[#DC2626]/10 hover:bg-[#DC2626]/20 text-[#DC2626] border border-[#DC2626]/30 transition-all"
+                      className="py-2.5 px-4 rounded-xl font-bold text-xs inline-flex items-center justify-center space-x-1.5 bg-[#DC2626]/10 hover:bg-[#DC2626]/20 text-[#DC2626] border border-[#DC2626]/30 transition-all cursor-pointer"
                     >
                       <XCircle className="w-4 h-4" />
-                      <span>REJECT</span>
+                      <span>Reject</span>
                     </button>
                   </div>
                 </div>
@@ -883,7 +1037,7 @@ export const ManualKycReviewScreen: React.FC = () => {
         </div>
       )}
 
-      {/* 4. Rejection Modal */}
+      {/* 4. Rejection Confirmation Modal */}
       {isRejectModalOpen && reviewingApplicant && (
         <div className="fixed inset-0 z-60 flex items-center justify-center bg-[#2C221E]/60 backdrop-blur-xs p-4">
           <div className="bg-[#FFFFFF] w-full max-w-lg rounded-2xl border border-[#EBE4D8] shadow-2xl p-5 sm:p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200">
@@ -924,7 +1078,7 @@ export const ManualKycReviewScreen: React.FC = () => {
             {/* Custom Reason Textarea */}
             <div className="space-y-1">
               <label className="text-[11px] font-bold text-[#2C221E] uppercase">
-                Rejection Note / Feedback to User:
+                Rejection Note / Feedback to Applicant:
               </label>
               <textarea
                 value={rejectionReason}

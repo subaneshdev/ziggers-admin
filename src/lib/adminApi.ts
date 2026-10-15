@@ -33,6 +33,9 @@ import {
   DailyGrowthTrendRecord,
   ManualKycQueueItem
 } from '../types/admin';
+import { authClient } from './authClient';
+
+const BACKEND_API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://backend.ziggers.in/api';
 
 // ============================================================================
 // Paginated Full-Table Retrieval & Unified Normalization Helpers
@@ -542,6 +545,9 @@ export const adminApi = {
     const SELECT_FIELDS = [
       'id',
       'full_name',
+      'legal_name',
+      'dob',
+      'gender',
       'mobile',
       'worker_name',
       'employer_name',
@@ -573,7 +579,7 @@ export const adminApi = {
       // WHERE kyc_status IN ('in_review', 'pending')
       //    OR worker_kyc_status IN ('in_review', 'pending')
       //    OR employer_kyc_status IN ('in_review', 'pending')
-      // ORDER BY kyc_submitted_at ASC NULLS LAST;
+      // Excludes instant Message Central records (kyc_method === 'instant' or id_type === 'Didit')
       query = query
         .or('kyc_status.in.(in_review,pending),worker_kyc_status.in.(in_review,pending),employer_kyc_status.in.(in_review,pending)')
         .order('kyc_submitted_at', { ascending: true, nullsFirst: false })
@@ -591,7 +597,7 @@ export const adminApi = {
       query = query.order('created_at', { ascending: false });
     }
 
-    const { data, error } = await query.limit(200);
+    const { data, error } = await query.limit(300);
 
     if (error) {
       console.error('Supabase fetchManualKycQueue error:', error);
@@ -600,24 +606,36 @@ export const adminApi = {
 
     const rows = (data || []) as any[];
 
-    return rows.map((p) => {
+    // Filter strictly for manual submissions; rule out instant Message Central / Didit records
+    const filteredRows = rows.filter((p) => {
+      const isInstant = p.kyc_method === 'instant' || p.id_type === 'Didit' || p.id_type === 'MessageCentral';
+      if (filterTab === 'PENDING') {
+        return !isInstant;
+      }
+      return true;
+    });
+
+    return filteredRows.map((p) => {
       const isEmployer = Boolean(p.employer_name || p.business_name || p.employer_type);
       const role: RoleType = isEmployer && !p.worker_name ? 'employer' : 'worker';
       const hasDocuments = Boolean(p.id_card_front_url || p.id_card_back_url || p.selfie_url);
 
       const resolvedName = 
-        String(p.full_name || p.worker_name || p.employer_name || p.business_name || 'Anonymous User').trim();
+        String(p.full_name || p.legal_name || p.worker_name || p.employer_name || p.business_name || 'Anonymous User').trim();
 
       return {
         id: p.id,
         fullName: resolvedName,
+        legalName: p.legal_name || undefined,
+        dob: p.dob || undefined,
+        gender: p.gender || undefined,
         mobile: p.mobile || 'Not Provided',
         role,
         workerName: p.worker_name || undefined,
         employerName: p.employer_name || undefined,
         businessName: p.business_name || undefined,
         employerType: p.employer_type || undefined,
-        kycMethod: p.kyc_method || 'manual_upload',
+        kycMethod: p.kyc_method || 'manual',
         kycSubmittedAt: p.kyc_submitted_at || null,
         kycReviewedAt: p.kyc_reviewed_at || null,
         kycReviewedBy: p.kyc_reviewed_by || null,
@@ -651,12 +669,50 @@ export const adminApi = {
       throw new Error('User ID is required for adjudication.');
     }
 
+    let cleanAadhaar = '';
+    let validatedReason = '';
+
     if (payload.status === 'approved') {
-      const cleanAadhaar = cleanAadhaarDigits(payload.extractedAadhaarNumber);
+      cleanAadhaar = cleanAadhaarDigits(payload.extractedAadhaarNumber);
       if (cleanAadhaar.length !== 12) {
         throw new Error('A valid 12-digit Aadhaar number is required to approve KYC.');
       }
+    } else if (payload.status === 'rejected') {
+      validatedReason = (payload.rejectionReason || '').trim();
+      if (!validatedReason) {
+        throw new Error('Please enter or select a rejection reason before rejecting.');
+      }
+    }
 
+    // 1. First attempt to call the Spring Boot Backend Adjudication Endpoint: POST /api/admin/kyc/{userId}/adjudicate
+    try {
+      const authHeader = authClient.getAuthHeader();
+      const backendPayload: any = {
+        status: payload.status,
+        role: payload.role,
+      };
+      if (payload.status === 'approved') {
+        backendPayload.idCardNumber = cleanAadhaar;
+      } else {
+        backendPayload.rejectionReason = validatedReason;
+      }
+
+      await fetch(`${BACKEND_API_BASE}/admin/kyc/${payload.userId}/adjudicate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeader,
+        },
+        body: JSON.stringify(backendPayload),
+      }).catch((fetchErr) => {
+        console.warn('Backend endpoint POST /api/admin/kyc/{userId}/adjudicate request error:', fetchErr);
+      });
+    } catch (err) {
+      console.warn('Backend adjudication invocation exception:', err);
+    }
+
+    // 2. Direct Supabase Update for immediate UI consistency and offline-first / replica resilience
+    if (payload.status === 'approved') {
       const updateObj: any = {
         id_card_number: cleanAadhaar,
         id_type: 'aadhaar',
@@ -686,14 +742,9 @@ export const adminApi = {
         throw new Error(`Failed to approve KYC in Supabase: ${error.message}`);
       }
     } else if (payload.status === 'rejected') {
-      const reason = (payload.rejectionReason || '').trim();
-      if (!reason) {
-        throw new Error('Please enter or select a rejection reason before rejecting.');
-      }
-
       const updateObj: any = {
         kyc_status: 'rejected',
-        rejection_reason: reason,
+        rejection_reason: validatedReason,
         kyc_reviewed_at: new Date().toISOString(),
         kyc_reviewed_by: payload.adminId || 'admin_manual'
       };
@@ -720,6 +771,7 @@ export const adminApi = {
 
     invalidateProfilesCache();
   },
+
 
   async approveKyc(userId: string, roleType: RoleType, extractedAadhaarNumber?: string): Promise<void> {
     const cleanAadhaar = extractedAadhaarNumber ? cleanAadhaarDigits(extractedAadhaarNumber) : undefined;

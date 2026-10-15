@@ -379,6 +379,9 @@ export interface DailyGrowthTrendRecord {
 export interface ManualKycQueueItem {
   id: string;
   fullName: string;
+  legalName?: string;
+  dob?: string;
+  gender?: string;
   mobile: string;
   role: RoleType;
   workerName?: string;
