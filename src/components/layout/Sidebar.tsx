@@ -62,11 +62,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
       badgeColor: 'bg-[#C69432]/10 text-[#C69432] border-[#C69432]/30',
     },
     {
-      name: 'Verification Queue',
+      name: 'Manual KYC Queue',
+      path: '/admin/kyc/review',
+      icon: ShieldCheck,
+      badge: 'Review',
+      badgeColor: 'bg-[#D97706]/10 text-[#D97706] border-[#D97706]/30',
+    },
+    {
+      name: 'Verification Directory',
       path: '/admin/kyc/queue',
       icon: ShieldCheck,
-      badge: '5 Pending',
-      badgeColor: 'bg-[#D97706]/10 text-[#D97706] border-[#D97706]/30',
+      badge: 'Directory',
+      badgeColor: 'bg-[#2563EB]/10 text-[#2563EB] border-[#2563EB]/30',
     },
     {
       name: 'Dispute Resolution',
