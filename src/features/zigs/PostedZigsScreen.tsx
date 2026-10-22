@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
   Briefcase, 
   Search, 
@@ -19,26 +19,122 @@ import {
   Check,
   ShieldCheck,
   Star,
-  Layers
+  Layers,
+  Edit3,
+  Trash2,
+  Save,
+  Loader2,
+  AlertTriangle
 } from 'lucide-react';
 import { adminApi } from '../../lib/adminApi';
-import { PostedZigRecord, TaskApplicantRecord } from '../../types/admin';
+import { PostedZigRecord, TaskApplicantRecord, UpdatePostedZigPayload } from '../../types/admin';
 import { formatCurrency, formatDate } from '../../lib/utils';
 import { useToast } from '../../components/ui/Toast';
+import { ConfirmationModal } from '../../components/common/ConfirmationModal';
 
 export const PostedZigsScreen: React.FC = () => {
-  const { success } = useToast();
+  const queryClient = useQueryClient();
+  const { success, error: toastError } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'POSTED' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'EXPIRED'>('ALL');
   const [applicantFilter, setApplicantFilter] = useState<'ALL' | 'WITH_APPLICANTS'>('ALL');
   const [selectedZig, setSelectedZig] = useState<PostedZigRecord | null>(null);
+  const [editingZig, setEditingZig] = useState<PostedZigRecord | null>(null);
+  const [deletingZig, setDeletingZig] = useState<PostedZigRecord | null>(null);
   const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
   const [applicantTab, setApplicantTab] = useState<'ALL' | 'pending' | 'accepted' | 'cancelled'>('ALL');
+
+  const [editForm, setEditForm] = useState({
+    title: '',
+    description: '',
+    category: '',
+    payout: 0,
+    status: 'POSTED',
+    paymentStatus: 'pending_payment',
+    workersRequired: 1,
+    locationName: '',
+  });
 
   const { data: zigs = [], isLoading } = useQuery({
     queryKey: ['postedZigsList'],
     queryFn: () => adminApi.fetchPostedZigsList(),
   });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, updates }: { id: string; updates: UpdatePostedZigPayload }) =>
+      adminApi.updatePostedZig(id, updates),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['postedZigsList'] });
+      success('Zig Updated', 'Successfully saved changes to this zig.');
+      if (selectedZig && selectedZig.id === variables.id) {
+        setSelectedZig((prev) => (prev ? ({ ...prev, ...variables.updates } as PostedZigRecord) : null));
+      }
+      setEditingZig(null);
+    },
+    onError: (err: any) => {
+      toastError('Update Failed', err.message || 'Failed to update zig details.');
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => adminApi.deletePostedZig(id),
+    onSuccess: (_, deletedId) => {
+      queryClient.invalidateQueries({ queryKey: ['postedZigsList'] });
+      success('Zig Deleted', 'The zig and its applications have been permanently removed.');
+      if (selectedZig?.id === deletedId) {
+        setSelectedZig(null);
+      }
+      setDeletingZig(null);
+    },
+    onError: (err: any) => {
+      toastError('Delete Failed', err.message || 'Failed to delete zig.');
+    },
+  });
+
+  const handleOpenEdit = (zig: PostedZigRecord) => {
+    setEditForm({
+      title: zig.title || '',
+      description: zig.description || '',
+      category: zig.category || 'General',
+      payout: zig.payout || 0,
+      status: zig.status || 'POSTED',
+      paymentStatus: zig.paymentStatus || 'pending_payment',
+      workersRequired: zig.workersRequired || 1,
+      locationName: zig.locationName || '',
+    });
+    setEditingZig(zig);
+  };
+
+  const handleSaveEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingZig) return;
+    if (!editForm.title.trim()) {
+      toastError('Validation Error', 'Please enter a valid title.');
+      return;
+    }
+    if (editForm.payout <= 0) {
+      toastError('Validation Error', 'Payout budget must be greater than ₹0.');
+      return;
+    }
+    if (editForm.workersRequired < 1) {
+      toastError('Validation Error', 'At least 1 worker is required.');
+      return;
+    }
+
+    updateMutation.mutate({
+      id: editingZig.id,
+      updates: {
+        title: editForm.title.trim(),
+        description: editForm.description.trim(),
+        category: editForm.category.trim(),
+        payout: Number(editForm.payout),
+        status: editForm.status,
+        paymentStatus: editForm.paymentStatus,
+        workersRequired: Number(editForm.workersRequired),
+        locationName: editForm.locationName.trim(),
+      },
+    });
+  };
 
   const handleCopyPhone = (phone: string) => {
     navigator.clipboard.writeText(phone);
@@ -350,18 +446,39 @@ export const PostedZigsScreen: React.FC = () => {
 
                       {/* Actions */}
                       <td className="py-2.5 px-3 text-right">
-                        <button
-                          onClick={() => setSelectedZig(z)}
-                          className="px-3 py-1.5 rounded-lg bg-[#2C221E] hover:bg-[#3D2F2A] text-white text-xs font-bold transition-colors inline-flex items-center space-x-1 min-h-[32px] shadow-sm"
-                        >
-                          <Eye className="w-3.5 h-3.5 text-[#C69432]" />
-                          <span>Inspect</span>
-                          {hasApps && (
-                            <span className="ml-1 w-4 h-4 rounded-full bg-[#C69432] text-white text-[9px] flex items-center justify-center font-bold">
-                              {z.applicationCount}
-                            </span>
-                          )}
-                        </button>
+                        <div className="flex items-center justify-end space-x-1.5">
+                          <button
+                            onClick={() => setSelectedZig(z)}
+                            className="px-2.5 py-1.5 rounded-lg bg-[#2C221E] hover:bg-[#3D2F2A] text-white text-xs font-bold transition-colors inline-flex items-center space-x-1 min-h-[32px] shadow-xs"
+                            title="Inspect Zig details"
+                          >
+                            <Eye className="w-3.5 h-3.5 text-[#C69432]" />
+                            <span>Inspect</span>
+                            {hasApps && (
+                              <span className="ml-1 w-4 h-4 rounded-full bg-[#C69432] text-white text-[9px] flex items-center justify-center font-bold">
+                                {z.applicationCount}
+                              </span>
+                            )}
+                          </button>
+
+                          <button
+                            onClick={() => handleOpenEdit(z)}
+                            className="p-1.5 rounded-lg bg-[#F0EBE1] hover:bg-[#EBE4D8] text-[#5C524B] hover:text-[#2C221E] border border-[#EBE4D8] transition-colors min-h-[32px] min-w-[32px] flex items-center justify-center"
+                            title="Edit this Zig"
+                            aria-label="Edit Zig"
+                          >
+                            <Edit3 className="w-3.5 h-3.5 text-[#C69432]" />
+                          </button>
+
+                          <button
+                            onClick={() => setDeletingZig(z)}
+                            className="p-1.5 rounded-lg bg-[#FEE2E2]/60 hover:bg-[#FEE2E2] text-[#DC2626] border border-[#FECACA] transition-colors min-h-[32px] min-w-[32px] flex items-center justify-center"
+                            title="Delete this Zig"
+                            aria-label="Delete Zig"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -685,8 +802,26 @@ export const PostedZigsScreen: React.FC = () => {
               </div>
             </div>
 
-            {/* Close Inspector Action */}
-            <div className="flex justify-end pt-2 border-t border-[#EBE4D8]">
+            {/* Modal Actions */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-[#EBE4D8]">
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => handleOpenEdit(selectedZig)}
+                  className="px-3.5 py-2 rounded-xl bg-[#F0EBE1] hover:bg-[#EBE4D8] text-[#2C221E] text-xs font-bold border border-[#EBE4D8] transition-colors inline-flex items-center space-x-1.5"
+                >
+                  <Edit3 className="w-3.5 h-3.5 text-[#C69432]" />
+                  <span>Edit Zig</span>
+                </button>
+
+                <button
+                  onClick={() => setDeletingZig(selectedZig)}
+                  className="px-3.5 py-2 rounded-xl bg-[#FEE2E2] hover:bg-[#FECACA] text-[#DC2626] text-xs font-bold border border-[#FECACA] transition-colors inline-flex items-center space-x-1.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete Zig</span>
+                </button>
+              </div>
+
               <button
                 onClick={() => setSelectedZig(null)}
                 className="px-5 py-2.5 rounded-xl bg-[#2C221E] hover:bg-[#3D2F2A] text-xs font-bold text-white shadow-sm transition-colors"
@@ -696,6 +831,219 @@ export const PostedZigsScreen: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Edit Zig Modal */}
+      {editingZig && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="max-w-2xl w-full rounded-2xl bg-[#FFFFFF] border border-[#EBE4D8] p-5 sm:p-6 space-y-5 font-poppins shadow-2xl max-h-[92vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-start justify-between border-b border-[#EBE4D8] pb-3.5">
+              <div className="space-y-1">
+                <div className="flex items-center space-x-2">
+                  <span className="text-[10px] font-numeric text-[#C69432] font-bold uppercase tracking-wider bg-[#F0EBE1] px-2 py-0.5 rounded border border-[#EBE4D8]">
+                    EDITING ZIG: {editingZig.id.slice(0, 12)}...
+                  </span>
+                  <span className="text-[10px] font-numeric font-bold px-2 py-0.5 rounded uppercase bg-[#2C221E] text-white">
+                    {editingZig.category}
+                  </span>
+                </div>
+                <h3 className="text-base sm:text-lg font-bold text-[#2C221E]">
+                  Modify Posted Zig Details
+                </h3>
+                <p className="text-xs text-[#665C54]">
+                  Update operational parameters, staffing demand, payout budget, or status in real time.
+                </p>
+              </div>
+              <button
+                onClick={() => setEditingZig(null)}
+                className="p-1.5 rounded-lg text-[#665C54] hover:text-[#2C221E] hover:bg-[#F0EBE1] transition-colors"
+                aria-label="Close edit modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleSaveEdit} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                {/* Title */}
+                <div className="sm:col-span-2 space-y-1">
+                  <label className="text-[11px] font-bold text-[#665C54] uppercase tracking-wider">
+                    Zig Title *
+                  </label>
+                  <input
+                    type="text"
+                    value={editForm.title}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, title: e.target.value }))}
+                    required
+                    placeholder="e.g. Warehouse Inventory Assistant"
+                    className="w-full bg-[#F8F5EE] border border-[#EBE4D8] rounded-xl px-3 py-2 text-xs text-[#2C221E] font-medium focus:outline-none focus:border-[#C69432]"
+                  />
+                </div>
+
+                {/* Category */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-[#665C54] uppercase tracking-wider">
+                    Category
+                  </label>
+                  <input
+                    type="text"
+                    value={editForm.category}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, category: e.target.value }))}
+                    placeholder="catering, delivery, event, etc."
+                    className="w-full bg-[#F8F5EE] border border-[#EBE4D8] rounded-xl px-3 py-2 text-xs text-[#2C221E] font-medium focus:outline-none focus:border-[#C69432]"
+                  />
+                </div>
+
+                {/* Status */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-[#665C54] uppercase tracking-wider">
+                    Zig Status
+                  </label>
+                  <select
+                    value={editForm.status}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, status: e.target.value }))}
+                    className="w-full bg-[#F8F5EE] border border-[#EBE4D8] rounded-xl px-3 py-2 text-xs text-[#2C221E] font-medium focus:outline-none focus:border-[#C69432]"
+                  >
+                    <option value="POSTED">POSTED (Open for applications)</option>
+                    <option value="ASSIGNED">ASSIGNED (Worker assigned)</option>
+                    <option value="IN_PROGRESS">IN_PROGRESS (Currently working)</option>
+                    <option value="COMPLETED">COMPLETED (Task finished)</option>
+                    <option value="CANCELLED">CANCELLED (Cancelled by employer/admin)</option>
+                    <option value="EXPIRED">EXPIRED (Expired / Shift passed)</option>
+                  </select>
+                </div>
+
+                {/* Payout */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-[#665C54] uppercase tracking-wider">
+                    Payout Budget (₹ INR) *
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-[#665C54]">₹</span>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={editForm.payout}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, payout: Number(e.target.value) }))}
+                      required
+                      className="w-full bg-[#F8F5EE] border border-[#EBE4D8] rounded-xl pl-7 pr-3 py-2 text-xs text-[#2C221E] font-bold font-numeric focus:outline-none focus:border-[#C69432]"
+                    />
+                  </div>
+                </div>
+
+                {/* Workers Required */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-[#665C54] uppercase tracking-wider">
+                    Workers Required *
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={editForm.workersRequired}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, workersRequired: Number(e.target.value) }))}
+                    required
+                    className="w-full bg-[#F8F5EE] border border-[#EBE4D8] rounded-xl px-3 py-2 text-xs text-[#2C221E] font-bold font-numeric focus:outline-none focus:border-[#C69432]"
+                  />
+                </div>
+
+                {/* Payment Status */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-[#665C54] uppercase tracking-wider">
+                    Payment Status
+                  </label>
+                  <select
+                    value={editForm.paymentStatus}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, paymentStatus: e.target.value }))}
+                    className="w-full bg-[#F8F5EE] border border-[#EBE4D8] rounded-xl px-3 py-2 text-xs text-[#2C221E] font-medium focus:outline-none focus:border-[#C69432]"
+                  >
+                    <option value="pending_payment">pending_payment</option>
+                    <option value="pending_hire">pending_hire</option>
+                    <option value="escrow_funded">escrow_funded</option>
+                    <option value="paid">paid</option>
+                    <option value="refunded">refunded</option>
+                  </select>
+                </div>
+
+                {/* Location Name */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-[#665C54] uppercase tracking-wider">
+                    Location Name / Address
+                  </label>
+                  <input
+                    type="text"
+                    value={editForm.locationName}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, locationName: e.target.value }))}
+                    placeholder="e.g. T. Nagar, Chennai"
+                    className="w-full bg-[#F8F5EE] border border-[#EBE4D8] rounded-xl px-3 py-2 text-xs text-[#2C221E] font-medium focus:outline-none focus:border-[#C69432]"
+                  />
+                </div>
+
+                {/* Description */}
+                <div className="sm:col-span-2 space-y-1">
+                  <label className="text-[11px] font-bold text-[#665C54] uppercase tracking-wider">
+                    Description & Instructions
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={editForm.description}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, description: e.target.value }))}
+                    placeholder="Describe specific tasks, attire requirements, shift details..."
+                    className="w-full bg-[#F8F5EE] border border-[#EBE4D8] rounded-xl px-3 py-2 text-xs text-[#2C221E] font-medium focus:outline-none focus:border-[#C69432] leading-relaxed resize-none"
+                  />
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end space-x-2.5 pt-3 border-t border-[#EBE4D8]">
+                <button
+                  type="button"
+                  onClick={() => setEditingZig(null)}
+                  disabled={updateMutation.isPending}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-[#5C524B] hover:text-[#2C221E] bg-[#F0EBE1] hover:bg-[#EBE4D8] transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={updateMutation.isPending}
+                  className="px-5 py-2 rounded-xl bg-[#2C221E] hover:bg-[#3D2F2A] text-white text-xs font-bold transition-all shadow-sm flex items-center space-x-1.5 disabled:opacity-50"
+                >
+                  {updateMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving Changes...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-3.5 h-3.5 text-[#C69432]" />
+                      <span>Save Changes</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deletingZig && (
+        <ConfirmationModal
+          isOpen={!!deletingZig}
+          onClose={() => setDeletingZig(null)}
+          onConfirm={() => deletingZig && deleteMutation.mutate(deletingZig.id)}
+          title="Delete Posted Zig"
+          description={`Are you sure you want to permanently delete the posted zig "${deletingZig.title}" (ID: ${deletingZig.id})?`}
+          consequenceText="All associated worker candidate applications and records for this task will be permanently erased. This operation cannot be reversed."
+          amountText={formatCurrency(deletingZig.payout)}
+          confirmButtonText="Delete Zig Permanently"
+          variant="danger"
+          isLoading={deleteMutation.isPending}
+        />
       )}
     </div>
   );

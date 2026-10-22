@@ -318,9 +318,22 @@ export interface PostedZigRecord {
   workersAssigned: number;
   applicationCount: number;
   applications: TaskApplicantRecord[];
-  startTime?: string;
-  endTime?: string;
+  startTime?: string | null;
+  endTime?: string | null;
   createdAt: string;
+}
+
+export interface UpdatePostedZigPayload {
+  title?: string;
+  description?: string;
+  category?: string;
+  payout?: number;
+  status?: string;
+  paymentStatus?: string;
+  workersRequired?: number;
+  locationName?: string;
+  startTime?: string | null;
+  endTime?: string | null;
 }
 
 export interface DailyTimeWindowRecord {

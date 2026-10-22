@@ -26,6 +26,7 @@ import {
   ReferralRecord,
   SupportTicketRecord,
   PostedZigRecord,
+  UpdatePostedZigPayload,
   TaskApplicantRecord,
   DailyTimeWindowRecord,
   DayRegisteredUserRecord,
@@ -2066,6 +2067,53 @@ export const adminApi = {
     if (error) {
       console.error('Error completing task in Supabase:', error);
       throw new Error(`Failed to complete task: ${error.message}`);
+    }
+  },
+
+  async updatePostedZig(taskId: string, updates: UpdatePostedZigPayload): Promise<void> {
+    const payload: Record<string, any> = {};
+    if (updates.title !== undefined) payload.title = updates.title;
+    if (updates.description !== undefined) payload.description = updates.description;
+    if (updates.category !== undefined) payload.category = updates.category;
+    if (updates.payout !== undefined) payload.payout = updates.payout;
+    if (updates.status !== undefined) payload.status = updates.status;
+    if (updates.paymentStatus !== undefined) payload.payment_status = updates.paymentStatus;
+    if (updates.workersRequired !== undefined) payload.workers_required = updates.workersRequired;
+    if (updates.locationName !== undefined) payload.location_name = updates.locationName;
+    if (updates.startTime !== undefined) payload.start_time = updates.startTime;
+    if (updates.endTime !== undefined) payload.end_time = updates.endTime;
+    payload.last_updated = new Date().toISOString();
+
+    const { error } = await supabase
+      .from('tasks')
+      .update(payload)
+      .eq('id', taskId);
+
+    if (error) {
+      console.error('Error updating task in Supabase:', error);
+      throw new Error(`Failed to update zig: ${error.message}`);
+    }
+  },
+
+  async deletePostedZig(taskId: string): Promise<void> {
+    // 1. Clean up child relations if any exist to prevent foreign key errors
+    await Promise.allSettled([
+      supabase.from('task_applications').delete().eq('task_id', taskId),
+      supabase.from('chat_messages').delete().eq('task_id', taskId),
+      supabase.from('task_checklists').delete().eq('task_id', taskId),
+      supabase.from('task_completed_checklists').delete().eq('task_id', taskId),
+      supabase.from('task_global_progress_photos').delete().eq('task_id', taskId),
+    ]);
+
+    // 2. Delete the task record itself
+    const { error } = await supabase
+      .from('tasks')
+      .delete()
+      .eq('id', taskId);
+
+    if (error) {
+      console.error('Error deleting task from Supabase:', error);
+      throw new Error(`Failed to delete zig: ${error.message}`);
     }
   }
 };
